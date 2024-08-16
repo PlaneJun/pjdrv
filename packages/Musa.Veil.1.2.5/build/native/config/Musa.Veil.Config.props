@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <!-- \veil\config\..\ -->
+    <Musa_Veil_Root>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)\..'))</Musa_Veil_Root>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Musa_Veil_Include>$(Musa_Veil_Root)\include</Musa_Veil_Include>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IncludePath>$(Musa_Veil_Include);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+
+</Project>

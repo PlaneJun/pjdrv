@@ -1,0 +1,110 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="module">
+      <UniqueIdentifier>{d9bc455d-110a-407c-b3c3-de2417894992}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils">
+      <UniqueIdentifier>{c16fb85a-66aa-4fd3-9f51-64c893b100c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="memory">
+      <UniqueIdentifier>{f39ec117-cf88-435a-a64c-ffef84536931}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="control">
+      <UniqueIdentifier>{c1ff7380-6e81-4ad9-aa58-e077fc06147b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="device">
+      <UniqueIdentifier>{43971a4d-fed9-4c8a-aeea-1010c809267c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="device\mouse">
+      <UniqueIdentifier>{fcb1d6f6-63ff-4d24-90e7-3845d1758e7e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="device\keybd">
+      <UniqueIdentifier>{c3db650b-c1a2-41ff-a62a-b9dcb0f52986}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="process">
+      <UniqueIdentifier>{6adfca49-0ec0-4e82-90fd-7aeff189b0cc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ssdt">
+      <UniqueIdentifier>{ae3ad139-e7cc-401d-9024-250e66c39164}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="symbols">
+      <UniqueIdentifier>{1b5b4838-dacf-4dcf-b935-098e4233e1a6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="module\module.cpp">
+      <Filter>module</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\utils.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="memory\memory.cpp">
+      <Filter>memory</Filter>
+    </ClCompile>
+    <ClCompile Include="control\control.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="device\idevice.cpp">
+      <Filter>device</Filter>
+    </ClCompile>
+    <ClCompile Include="device\mouse.cpp">
+      <Filter>device\mouse</Filter>
+    </ClCompile>
+    <ClCompile Include="device\keybd.cpp">
+      <Filter>device\keybd</Filter>
+    </ClCompile>
+    <ClCompile Include="process\process.cpp">
+      <Filter>process</Filter>
+    </ClCompile>
+    <ClCompile Include="ssdt\ssdt.cpp">
+      <Filter>ssdt</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="module\module.h">
+      <Filter>module</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\utils.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="memory\memory.h">
+      <Filter>memory</Filter>
+    </ClInclude>
+    <ClInclude Include="control\control.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="device\idevice.h">
+      <Filter>device</Filter>
+    </ClInclude>
+    <ClInclude Include="device\mouse.h">
+      <Filter>device\mouse</Filter>
+    </ClInclude>
+    <ClInclude Include="device\keybd.h">
+      <Filter>device\keybd</Filter>
+    </ClInclude>
+    <ClInclude Include="process\process.h">
+      <Filter>process</Filter>
+    </ClInclude>
+    <ClInclude Include="ssdt\ssdt.h">
+      <Filter>ssdt</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\symbols.hpp">
+      <Filter>symbols</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

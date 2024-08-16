@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="drv">
+      <UniqueIdentifier>{42628e07-3450-4f97-8e9b-55f7f6fc9418}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pdb">
+      <UniqueIdentifier>{95ec9bde-7c98-4426-be22-538c9e8f60f8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="md5">
+      <UniqueIdentifier>{c759ef7f-4982-40b4-8aa0-4b902c49a1ff}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="r3.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="drv\drv.cpp">
+      <Filter>drv</Filter>
+    </ClCompile>
+    <ClCompile Include="pdb\Pdb.cpp">
+      <Filter>pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="md5\md5.cpp">
+      <Filter>md5</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="drv\dll_shellcode.h">
+      <Filter>drv</Filter>
+    </ClInclude>
+    <ClInclude Include="drv\dll_struct.h">
+      <Filter>drv</Filter>
+    </ClInclude>
+    <ClInclude Include="drv\drv.h">
+      <Filter>drv</Filter>
+    </ClInclude>
+    <ClInclude Include="pdb\Pdb.h">
+      <Filter>pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="md5\md5.h">
+      <Filter>md5</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
