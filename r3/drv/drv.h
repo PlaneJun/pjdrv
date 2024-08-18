@@ -37,9 +37,11 @@ public:
 				PVOID64 buffer;
 				ULONG64 length;
 				PVOID64 output;
-				ULONG64 proctect;
+				ULONG proctect;
+				ULONG oldprotect;
 				ULONG64 alloctype;
 				ERWTYPE rw_type;
+				SIZE_T retByte;
 			}mem;
 
 			struct
@@ -111,7 +113,7 @@ public:
 
 	bool alloc_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, PVOID64 Output, ULONG AllocationType, ULONG Protect);
 
-	bool protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG64 newProtect);
+	bool protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newProtect,PULONG oldProtect = NULL);
 
 	uint64_t allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULONG AllocationType, ULONG Protect);
 
@@ -139,7 +141,7 @@ public:
 	}
 
 	template<typename T>
-	T read(uint32_t pid,PVOID64 addr, ERWTYPE type = ERWTYPE::MDL)
+	T read(uint32_t pid,PVOID64 addr, ERWTYPE type = ERWTYPE::MmCopy)
 	{
 		T val{};
 
@@ -148,7 +150,7 @@ public:
 	}
 
 	template<typename T>
-	void write(uint32_t pid, PVOID64 addr,T val,ERWTYPE type = ERWTYPE::MDL)
+	void write(uint32_t pid, PVOID64 addr,T val,ERWTYPE type = ERWTYPE::MmCopy)
 	{
 		write_mem(pid, addr,sizeof(T),&val, type);
 	}
@@ -192,7 +194,7 @@ private:
 
 	bool hook_fix_proxy(DWORD ProcessId, PVOID Poxy, HookMapdLLparam* param, SIZE_T PoxySize);
 
-	bool hook_GetForegroundWindow(DWORD ProcessId, PVOID Poxy);
+	bool hook_TranslateMessage(DWORD ProcessId, PVOID Poxy);
 
 #pragma endregion
 

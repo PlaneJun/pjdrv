@@ -55,50 +55,50 @@ PVOID memory::find_pattern_in_module(uintptr_t base, const char* sec_name, const
 	return 0;
 }
 
-NTSTATUS memory::translate_addrsss(IN UINT64 DirBase, _Inout_ PUINT64 addr)
+
+static const uint64_t PMASK = (~0xfull << 8) & 0xfffffffffull;
+uint64_t memory::translate_addrsss(uint64_t DirBase, uint64_t addr)
 {
-	UINT16   PML4, PDPE, PDE, PTE, offset;
-	UINT64   mask = 0x7fffff000;
-	UINT64   uTmp;
-	SIZE_T   BytesTransferred;
-	NTSTATUS status;
+	DirBase &= ~0xf;
 
-	offset = *addr & 0xfff;
-	PTE = (*addr >> 12) & 0x1ff;
-	PDE = (*addr >> (12 + 9)) & 0x1ff;
-	PDPE = (*addr >> (9 * 2 + 12)) & 0x1ff;
-	PML4 = (*addr >> (9 * 3 + 12)) & 0x1ff;
+	uint64_t pageOffset = addr & ~(~0ul << 12);
+	uint64_t pte = ((addr >> 12) & (0x1ffll));
+	uint64_t pt = ((addr >> 21) & (0x1ffll));
+	uint64_t pd = ((addr >> 30) & (0x1ffll));
+	uint64_t pdp = ((addr >> 39) & (0x1ffll));
 
-	do
-	{
-		status = read_physical_addr((PVOID64)(DirBase + PML4 * 8), &uTmp, sizeof(uTmp), &BytesTransferred);
-		if (!NT_SUCCESS(status))
-			break;
+	SIZE_T readsize = 0;
+	uint64_t pdpe = 0;
+	read_physical_addr(reinterpret_cast<PVOID64>(DirBase + 8 * pdp), &pdpe, sizeof(pdpe), &readsize);
+	if (~pdpe & 1)
+		return 0;
 
-		uTmp &= mask;
+	uint64_t pde = 0;
+	read_physical_addr(reinterpret_cast<PVOID64>((pdpe & PMASK) + 8 * pd), &pde, sizeof(pde), &readsize);
+	if (~pde & 1)
+		return 0;
 
-		status = read_physical_addr((PVOID64)(uTmp + PDPE * 8), &uTmp, sizeof(uTmp), &BytesTransferred);
-		if (!NT_SUCCESS(status))
-			break;
+	/* 1GB large page, use pde's 12-34 bits */
+	if (pde & 0x80)
+		return (pde & (~0ull << 42 >> 12)) + (addr & ~(~0ull << 30));
 
-		uTmp &= mask;
+	uint64_t pteAddr = 0;
+	read_physical_addr(reinterpret_cast<PVOID64>((pde & PMASK) + 8 * pt), &pteAddr, sizeof(pteAddr), &readsize);
+	if (~pteAddr & 1)
+		return 0;
 
-		status = read_physical_addr((PVOID64)(uTmp + PDE * 8), &uTmp, sizeof(uTmp), &BytesTransferred);
-		if (!NT_SUCCESS(status))
-			break;
+	/* 2MB large page */
+	if (pteAddr & 0x80)
+		return (pteAddr & PMASK) + (addr & ~(~0ull << 21));
 
-		uTmp &= mask;
+	addr = 0;
+	read_physical_addr(reinterpret_cast<PVOID64>((pteAddr & PMASK) + 8 * pte), &addr, sizeof(addr), &readsize);
+	addr &= PMASK;
 
-		status = read_physical_addr((PVOID64)(uTmp + PTE * 8), &uTmp, sizeof(uTmp), &BytesTransferred);
-		if (!NT_SUCCESS(status))
-			break;
+	if (!addr)
+		return 0;
 
-		uTmp &= mask;
-
-		*addr = uTmp + offset;
-	} while (false);
-	
-	return status;
+	return addr + pageOffset;
 }
 
 NTSTATUS memory::read_physical_addr(IN PVOID64 address, OUT PVOID64 buffer, IN SIZE_T size, OUT SIZE_T* BytesTransferred)

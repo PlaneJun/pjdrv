@@ -11,7 +11,7 @@
 
 unsigned char hkAslLogCallPrintf[] =
 {
-	0x15,//XOR_KEY
+	0x15, //XOR_KEY
 	0x59, 0x9c, 0x59, 0x31, 0x35, 0x59, 0x9c, 0x51,
 	0x31, 0xd, 0x5d, 0x9c, 0x41, 0x31, 0x5, 0x9c,
 	0x59, 0x31, 0x1d, 0x5d, 0x96, 0xf9, 0x5d, 0x5d,
@@ -42,129 +42,146 @@ void IoDispatch(Control::PDataParams pdata)
 {
 	switch (pdata->cmd)
 	{
-		case Control::ECMD::CMD_CONTROL: 
+	case Control::ECMD::CMD_CONTROL:
 		{
 			pdata->cmd = 1;
 			break;
 		}
-		case Control::ECMD::CMD_GetProcessModules:
+	case Control::ECMD::CMD_GetProcessModules:
 		{
-			PVOID base  = process::get_module_base((HANDLE)pdata->pid,(wchar_t*)pdata->params.m.module_name,pdata->params.m.wow64,&pdata->params.m.module_size);
-			pdata->params.m.output = base;
+			pdata->params.m.output = process::get_module_base(reinterpret_cast<HANDLE>(pdata->pid),
+			                                                  static_cast<const wchar_t*>(pdata->params.m.module_name),
+			                                                  pdata->params.m.wow64, &pdata->params.m.module_size);
 			break;
 		}
-		case Control::ECMD::CMD_GetExportFunction: 
+	case Control::ECMD::CMD_GetExportFunction:
 		{
-			PEPROCESS pEProcess = NULL;
-			if (process::get_eprocess((HANDLE)pdata->pid, &pEProcess))
+			PEPROCESS pEProcess = nullptr;
+			if (process::get_eprocess(reinterpret_cast<HANDLE>(pdata->pid), &pEProcess))
 			{
-				PVOID funcAddr = NULL;
-				PVOID64 addr = pdata->params.m.module_base;
-				PCHAR funName = (PCHAR)ExAllocatePool(NonPagedPool, strlen((PCCHAR)pdata->params.m.module_name) + 1);
-				memcpy(funName, pdata->params.m.module_name, strlen((PCCHAR)pdata->params.m.module_name) + 1);
+				auto funName = static_cast<PCHAR>(ExAllocatePool(NonPagedPool,strlen(static_cast<char const*>(pdata->params.m.module_name)) + 1));
+				memcpy(funName, pdata->params.m.module_name,
+				       strlen(static_cast<PCCHAR>(pdata->params.m.module_name)) + 1);
 
-				KAPC_STATE apc_state = { 0 };
+				KAPC_STATE apc_state = {nullptr};
 				KeStackAttachProcess(pEProcess, &apc_state);
-				funcAddr = module::get_module_export(addr, funName);
+				pdata->params.m.output = module::get_module_export(pdata->params.m.module_base, funName);
 				KeUnstackDetachProcess(&apc_state);
-				*(ULONG64*)pdata->params.m.output = (ULONG64)funcAddr;
 				ObDereferenceObject(pEProcess);
 			}
 			break;
 		}
-		case Control::ECMD::CMD_QueryVirtualMemory: 
+	case Control::ECMD::CMD_QueryVirtualMemory:
 		{
-			process::query_virtual_memory((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.output);
+			process::query_virtual_memory(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+			                              pdata->params.mem.output);
 			break;
 		}
-		case Control::ECMD::CMD_ProtectVirtualMemory: 
+	case Control::ECMD::CMD_ProtectVirtualMemory:
 		{
-			process::protect_vmem((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.length,pdata->params.mem.proctect);
+			process::protect_vmem(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+			                      pdata->params.mem.length, pdata->params.mem.proctect, &pdata->params.mem.oldprotect);
 			break;
 		}
-		case Control::ECMD::CMD_AllocMemory: 
+	case Control::ECMD::CMD_AllocMemory:
 		{
-			process::alloc_virtual_memory((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.length,pdata->params.mem.alloctype ,pdata->params.mem.proctect,pdata->params.mem.output);
+			process::alloc_virtual_memory(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+			                              pdata->params.mem.length, pdata->params.mem.alloctype,
+			                              pdata->params.mem.proctect, pdata->params.mem.output);
 			break;
 		}
-		case Control::ECMD::CMD_ReadMemory: 
-		{
-			switch(pdata->params.mem.rw_type)
-			{
-				case Control::ERWTYPE::MmCopy:
-				{
-					process::rw_virtual_memory((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.output, pdata->params.mem.length, NULL, true);
-					break;
-				}
-				case Control::ERWTYPE::MDL:
-				{
-					process::read_vmem_cpy((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.output, pdata->params.mem.length);
-					break;
-				}
-				case Control::ERWTYPE::PHYSICAL:
-				{
-					process::read_vmem_physic((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.output, pdata->params.mem.length);
-					break;
-				}
-			}
-			break;
-		}
-		case Control::ECMD::CMD_WriteMemory: 
+	case Control::ECMD::CMD_ReadMemory:
 		{
 			switch (pdata->params.mem.rw_type)
 			{
-				case Control::ERWTYPE::MmCopy:
+			case Control::ERWTYPE::MmCopy:
 				{
-					process::rw_virtual_memory((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.buffer, pdata->params.mem.length, NULL, false);
+					process::rw_virtual_memory(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+					                           pdata->params.mem.output, pdata->params.mem.length, nullptr, true);
 					break;
 				}
-				case Control::ERWTYPE::MDL:
+			case Control::ERWTYPE::MDL:
 				{
-					process::write_vmem_mdl((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.buffer, pdata->params.mem.length);
+					process::read_vmem_cpy(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+					                       pdata->params.mem.output, pdata->params.mem.length, &pdata->params.mem.retByte);
 					break;
 				}
-				case Control::ERWTYPE::PHYSICAL:
+			case Control::ERWTYPE::PHYSICAL:
 				{
-					process::write_vmem_physic((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.buffer, pdata->params.mem.length);
+					process::read_vmem_physic(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+					                          pdata->params.mem.output, pdata->params.mem.length, &pdata->params.mem.retByte);
 					break;
 				}
 			}
 			break;
 		}
-		case Control::ECMD::CMD_FreeMemory: 
+	case Control::ECMD::CMD_WriteMemory:
 		{
-			process::free_virtual_memory((HANDLE)pdata->pid, pdata->params.mem.addr, pdata->params.mem.length);
+			switch (pdata->params.mem.rw_type)
+			{
+			case Control::ERWTYPE::MmCopy:
+				{
+					process::rw_virtual_memory(reinterpret_cast<HANDLE>(pdata->pid),
+					                           pdata->params.mem.addr, pdata->params.mem.buffer,
+					                           pdata->params.mem.length, nullptr, false);
+					break;
+				}
+			case Control::ERWTYPE::MDL:
+				{
+					process::write_vmem_mdl(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+					                        pdata->params.mem.buffer, pdata->params.mem.length, &pdata->params.mem.retByte);
+					break;
+				}
+			case Control::ERWTYPE::PHYSICAL:
+				{
+					process::write_vmem_physic(reinterpret_cast<HANDLE>(pdata->pid),
+					                           pdata->params.mem.addr, pdata->params.mem.buffer,
+					                           pdata->params.mem.length,&pdata->params.mem.retByte);
+					break;
+				}
+			}
 			break;
 		}
-		case Control::ECMD::CMD_CreateThread:
+	case Control::ECMD::CMD_FreeMemory:
 		{
-			process::create_thread((HANDLE)pdata->pid, pdata->params.thread.entry, pdata->params.thread.params,&pdata->params.thread.handler);
+			process::free_virtual_memory(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.mem.addr,
+			                             pdata->params.mem.length);
 			break;
 		}
-		case Control::ECMD::CMD_Close:
+	case Control::ECMD::CMD_CreateThread:
 		{
-			process::close_handle((HANDLE)pdata->pid, pdata->params.thread.handler);
+			process::create_thread(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.thread.entry,
+			                       pdata->params.thread.params, &pdata->params.thread.handler);
 			break;
 		}
-		case Control::ECMD::CMD_KbdEvent:
+	case Control::ECMD::CMD_Close:
 		{
-			Keybd::init();
-			Keybd::keybd_event_(pdata->params.device.keycode, (USHORT)pdata->params.device.flags);
+			process::close_handle(reinterpret_cast<HANDLE>(pdata->pid), pdata->params.thread.handler);
 			break;
 		}
-		case Control::ECMD::CMD_MouseEvent:
+	case Control::ECMD::CMD_KbdEvent:
 		{
-			Mouse::init();
-			Mouse::mouse_event_(pdata->params.device.mx, pdata->params.device.my, pdata->params.device.flags);
+			if (NT_SUCCESS(Keybd::init()))
+			{
+				Keybd::keybd_event_(pdata->params.device.keycode, pdata->params.device.flags);
+			}
 			break;
 		}
-		case Control::ECMD::CMD_Symbol:
+	case Control::ECMD::CMD_MouseEvent:
+		{
+			if (NT_SUCCESS(Mouse::init()))
+			{
+				Mouse::mouse_event_(pdata->params.device.mx, pdata->params.device.my, pdata->params.device.flags);
+			}
+			break;
+		}
+	case Control::ECMD::CMD_Symbol:
 		{
 			ULONG size = NULL;
-			ULONG64 ntBase = (ULONG64)module::get_ntoskrnl_base(&size);
+			ULONG64 ntBase = reinterpret_cast<ULONG64>(module::get_ntoskrnl_base(&size));
 			symbols::offsets::vad_root_ = pdata->params.symbs.vad_root;
 			symbols::global::KeServiceDescriptorTable_ = ntBase + pdata->params.symbs.KeServiceDescriptorTable;
-			symbols::offsets::data_base_ =  pdata->params.symbs.data_base;
+			symbols::offsets::data_base_ = pdata->params.symbs.data_base;
 			break;
 		}
 	}
@@ -174,34 +191,38 @@ PVOID Control::find_control_ptr()
 {
 	uintptr_t ahcache_base = NULL;
 	size_t ahcache_size = NULL;
-	NTSTATUS status =module::get_kernel_module("ahcache.sys", &ahcache_base, &ahcache_size);
+	NTSTATUS status = module::get_kernel_module("ahcache.sys", &ahcache_base, &ahcache_size);
 	if (!NT_SUCCESS(status))
 	{
-		return FALSE;
+		return nullptr;
 	}
 
-	static uint8_t Pattern[] = { 0x4C,0x89,0x4C,0x24,0xCC,0x48,0x83,0xEC,0xCC,0x48,0x8B,0x05,0xCC,0xCC,0xCC,0xCC,0x48,0x85,0xC0,0xCC };
+	static uint8_t Pattern[] = {
+		0x4C, 0x89, 0x4C, 0x24, 0xCC, 0x48, 0x83, 0xEC, 0xCC, 0x48, 0x8B, 0x05, 0xCC, 0xCC, 0xCC, 0xCC, 0x48, 0x85,
+		0xC0, 0xCC
+	};
 	AslLogPfnVPrintf_ = memory::find_pattern_in_module(ahcache_base, "PAGE", Pattern, sizeof(Pattern), 9);
 	if (!MmIsAddressValid(AslLogPfnVPrintf_))
-		return NULL;
+		return nullptr;
 	return AslLogPfnVPrintf_;
 }
 
 void Control::install()
 {
 	AslLogPfnVPrintf_ = find_control_ptr();
-	if (AslLogPfnVPrintf_ == NULL)
+	if (AslLogPfnVPrintf_ == nullptr)
 	{
 		return;
 	}
 
 	//alloc memmory
-	PHYSICAL_ADDRESS lowRange = { 0 };
-	PHYSICAL_ADDRESS hightRange = { -1 };
-	PULONG_PTR lpMem = NULL;
+	PHYSICAL_ADDRESS lowRange = {0};
+	PHYSICAL_ADDRESS hightRange = {-1};
+	PULONG_PTR lpMem = nullptr;
 	for (int i = 0; i < 10; i++)
 	{
-		lpMem = (PULONG_PTR)MmAllocateContiguousMemorySpecifyCache(PAGE_SIZE, lowRange, hightRange, lowRange, MmCached);
+		lpMem = static_cast<PULONG_PTR>(MmAllocateContiguousMemorySpecifyCache(
+			PAGE_SIZE, lowRange, hightRange, lowRange, MmCached));
 		if (lpMem)
 			break;
 	}
@@ -215,24 +236,28 @@ void Control::install()
 	lpMem[0] = reinterpret_cast<uintptr_t>(utils::get_system_function(L"PsGetCurrentThreadTeb"));
 	lpMem[1] = reinterpret_cast<uintptr_t>(utils::get_system_function(L"MmIsAddressValid"));
 	lpMem[2] = reinterpret_cast<uintptr_t>(IoDispatch);
-	
+
 	//decrypt && copy
-	uint8_t* entry = reinterpret_cast<uint8_t*>(&lpMem[3]);
+	auto entry = reinterpret_cast<uint8_t*>(&lpMem[3]);
 	for (int i = 1; i < sizeof(hkAslLogCallPrintf); i++)
 		entry[i - 1] = hkAslLogCallPrintf[i] ^ hkAslLogCallPrintf[0];
 
 	//fix [mov rax, 123456789112]
 	for (int i = 0; i < 50; i++)
 	{
-		if (*(PULONG_PTR)&entry[i] == 0x123456789112)
-			*(PULONG_PTR)&entry[i] = (ULONG_PTR)lpMem;
+		ULONG64* tagPtr = reinterpret_cast<ULONG64*>(&entry[i]);
+		if (*tagPtr == 0x123456789112)
+		{
+			*tagPtr = reinterpret_cast<ULONG64>(lpMem);
+		}
+
 	}
 	//set point
 	PHYSICAL_ADDRESS tmp = MmGetPhysicalAddress(AslLogPfnVPrintf_);
-	PULONG_PTR map = (PULONG_PTR)MmMapIoSpace(tmp, 8, MmNonCached);
+	auto map = static_cast<PULONG_PTR>(MmMapIoSpace(tmp, 8, MmNonCached));
 	if (map)
 	{
-		*map = (ULONG_PTR)entry;
+		*map = reinterpret_cast<ULONG64>(entry);
 		MmUnmapIoSpace(map, 8);
 	}
 }

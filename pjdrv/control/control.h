@@ -35,9 +35,11 @@ public:
 				PVOID64 buffer;
 				ULONG64 length;
 				PVOID64 output;
-				ULONG64 proctect;
+				ULONG proctect;
+				ULONG oldprotect;
 				ULONG64 alloctype;
 				ERWTYPE rw_type;
+				SIZE_T retByte;
 			}mem;
 
 			struct

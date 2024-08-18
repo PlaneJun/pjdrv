@@ -198,7 +198,7 @@ uint64_t drv::allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULON
 
 	return AllocBase;
 }
-bool drv::protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG64 newProtect)
+bool drv::protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newProtect, PULONG oldProtect)
 {
 	DataParams dp = { 0 };
 	dp.cmd = CMD_ProtectVirtualMemory;
@@ -208,6 +208,11 @@ bool drv::protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG64 newP
 	dp.params.mem.proctect = newProtect;
 
 	send_control(&dp);
+
+	if(oldProtect != NULL)
+	{
+		*oldProtect = dp.params.mem.oldprotect;
+	}
 	return TRUE;
 }
 bool drv::free_mem(DWORD ProcessId, PVOID64 Address, ULONG Size)
@@ -316,7 +321,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	{
 		return false;
 	}
-	write_mem(ProcessId,ShllCodeMeory, sizeof(g_ShellCodeExDll),g_ShellCodeExDll,ERWTYPE::MDL);
+	write_mem(ProcessId,ShllCodeMeory, sizeof(g_ShellCodeExDll),g_ShellCodeExDll,ERWTYPE::MmCopy);
 	PVOID64 pHookAddressMemory = NULL;
 	run_hook(ProcessId,ShllCodeMeory, param,&pHookAddressMemory);
 	Shellparam wait_inject{};
@@ -412,15 +417,15 @@ bool drv::copy_sections(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PIMAGE_SECTI
 	auto SectionSize = NtHread->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER);
 	auto MoveSize = HeaderSize + SectionSize;
 	//复制头和段信息
-	write_mem(ProcessId,MemoryAddress, MoveSize,data, ERWTYPE::MDL);
+	write_mem(ProcessId,MemoryAddress, static_cast<ULONG>(MoveSize),data, ERWTYPE::MmCopy);
 
 	//复制每个节
 	for (int i = 0; i < NtHread->FileHeader.NumberOfSections; ++i)
 	{
 		if (SectionHeader[i].VirtualAddress == 0 || SectionHeader[i].SizeOfRawData == 0)
 			continue;
-		void* pSectionAddress = (void*)((DWORD64)MemoryAddress + SectionHeader[i].VirtualAddress);
-		write_mem(ProcessId, pSectionAddress, SectionHeader[i].SizeOfRawData, (PCHAR)data + SectionHeader[i].PointerToRawData, ERWTYPE::MDL);
+		auto pSectionAddress = reinterpret_cast<PVOID>(reinterpret_cast<uint64_t>(MemoryAddress) + SectionHeader[i].VirtualAddress);
+		write_mem(ProcessId, pSectionAddress, SectionHeader[i].SizeOfRawData, static_cast<PCHAR>(data) + SectionHeader[i].PointerToRawData, ERWTYPE::MmCopy);
 	}
 	return TRUE;
 }
@@ -430,30 +435,31 @@ VOID drv::fix_loc_datas(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PVOID Memory
 	if (NtHread->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress > 0
 		&& NtHread->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size > 0)
 	{
-		DWORD64 Delta = (DWORD64)MemoryAddress - NtHread->OptionalHeader.ImageBase;
-		DWORD64* pAddress;
+		DWORD64 Delta = reinterpret_cast<uint64_t>(MemoryAddress) - NtHread->OptionalHeader.ImageBase;
+		DWORD64* pAddress = nullptr;
 
 		//注意重定位表的位置可能和硬盘文件中的偏移地址不同，应该使用加载后的地址
 		PCHAR tmpData = new CHAR[NtHread->OptionalHeader.SizeOfImage];
-		read_mem(ProcessId,MemoryAddress, NtHread->OptionalHeader.SizeOfImage,tmpData, ERWTYPE::MDL);
+		read_mem(ProcessId,MemoryAddress, NtHread->OptionalHeader.SizeOfImage,tmpData, ERWTYPE::MmCopy);
 
-		PIMAGE_BASE_RELOCATION pLoc = (PIMAGE_BASE_RELOCATION)((DWORD64)tmpData
+		auto pLoc = reinterpret_cast<PIMAGE_BASE_RELOCATION>(reinterpret_cast<uintptr_t>(tmpData)
 			+ NtHread->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 		while ((pLoc->VirtualAddress + pLoc->SizeOfBlock) != 0) //开始扫描重定位表
 		{
-			PSHORT pLocData = (PSHORT)((DWORD64)pLoc + sizeof(IMAGE_BASE_RELOCATION));
+			auto pLocData = reinterpret_cast<PSHORT>(reinterpret_cast<uintptr_t>(pLoc) + sizeof(IMAGE_BASE_RELOCATION));
 			//计算本节需要修正的重定位项（地址）的数目
 			int NumberOfReloc = (pLoc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(SHORT);
 			for (int i = 0; i < NumberOfReloc; i++)
 			{
-				if ((DWORD64)(pLocData[i] & 0xF000) == 0x00003000 || (DWORD64)(pLocData[i] & 0xF000) == 0x0000A000) //这是一个需要修正的地址
+				uint64_t flags = static_cast<uint64_t>(pLocData[i] & 0xF000);
+				if (flags == 0x00003000 || flags == 0x0000A000) //这是一个需要修正的地址
 				{
-					pAddress = (DWORD64*)((DWORD64)MemoryAddress + pLoc->VirtualAddress + (pLocData[i] & 0x0FFF));
+					pAddress = reinterpret_cast<DWORD64*>(reinterpret_cast<uintptr_t>(MemoryAddress) + pLoc->VirtualAddress + (pLocData[i] & 0x0FFF));
 					DWORD64 origin = read<DWORD64>(ProcessId,pAddress);
 					write<DWORD64>(ProcessId,pAddress, origin + Delta);
 				}
 			}
-			pLoc = (PIMAGE_BASE_RELOCATION)((DWORD64)pLoc + pLoc->SizeOfBlock);
+			pLoc = reinterpret_cast<decltype(pLoc)>(reinterpret_cast<uintptr_t>(pLoc) + pLoc->SizeOfBlock);
 		}
 
 		delete[] tmpData;
@@ -462,32 +468,32 @@ VOID drv::fix_loc_datas(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PVOID Memory
 
 bool drv::fill_params(DWORD ProcessId,Shellparam* param, PVOID MemoryAddress, DWORD e_lfanew)
 {
-	HMODULE DllBase = GetModuleHandleA("ntdll.dll");
+	const HMODULE DllBase = GetModuleHandleA("ntdll.dll");
 	if (DllBase == NULL)
 	{
 		return FALSE;
 	}
 	Shellparam temp{};
 
-	temp.LdrGetProcedureAddress = (LdrGetProcedureAddressT)GetProcAddress(DllBase, "LdrGetProcedureAddress");
+	temp.LdrGetProcedureAddress = reinterpret_cast<LdrGetProcedureAddressT>(GetProcAddress(DllBase, "LdrGetProcedureAddress"));
 	printf("[+]LdrGetProcedureAddress %p\n", temp.LdrGetProcedureAddress);
 
-	temp.dwNtAllocateVirtualMemory = (NtAllocateVirtualMemoryT)GetProcAddress(DllBase, "NtAllocateVirtualMemory");
+	temp.dwNtAllocateVirtualMemory = reinterpret_cast<NtAllocateVirtualMemoryT>(GetProcAddress(DllBase, "NtAllocateVirtualMemory"));
 	printf("[+]dwNtAllocateVirtualMemory %p\n", temp.dwNtAllocateVirtualMemory);
 
-	temp.pLdrLoadDll = (LdrLoadDllT)GetProcAddress(DllBase, "LdrLoadDll");
+	temp.pLdrLoadDll = reinterpret_cast<LdrLoadDllT>(GetProcAddress(DllBase, "LdrLoadDll"));
 	printf("[+]pLdrLoadDll %p\n", temp.pLdrLoadDll);
 
-	temp.RtlInitAnsiString = (RtlInitAnsiStringT)GetProcAddress(DllBase, "RtlInitAnsiString");
+	temp.RtlInitAnsiString = reinterpret_cast<RtlInitAnsiStringT>(GetProcAddress(DllBase, "RtlInitAnsiString"));
 	printf("[+]RtlInitAnsiString %p\n", temp.RtlInitAnsiString);
 
-	temp.RtlAnsiStringToUnicodeString = (RtlAnsiStringToUnicodeStringT)GetProcAddress(DllBase, "RtlAnsiStringToUnicodeString");
+	temp.RtlAnsiStringToUnicodeString = reinterpret_cast<RtlAnsiStringToUnicodeStringT>(GetProcAddress(DllBase, "RtlAnsiStringToUnicodeString"));
 	printf("[+]RtlAnsiStringToUnicodeString %p\n", temp.RtlAnsiStringToUnicodeString);
 
-	temp.RtlFreeUnicodeString = (RtlFreeUnicodeStringT)GetProcAddress(DllBase, "RtlFreeUnicodeString");
+	temp.RtlFreeUnicodeString = reinterpret_cast<RtlFreeUnicodeStringT>(GetProcAddress(DllBase, "RtlFreeUnicodeString"));
 	printf("[+]RtlFreeUnicodeString %p\n", temp.RtlFreeUnicodeString);
 
-	temp.pNTHeader = (PIMAGE_NT_HEADERS)((DWORD64)MemoryAddress + e_lfanew);
+	temp.pNTHeader = reinterpret_cast<PIMAGE_NT_HEADERS>(reinterpret_cast<uintptr_t>(MemoryAddress) + e_lfanew);
 	printf("[+]pNTHeader %p\n", temp.pNTHeader);
 
 	temp.pMemoryAddress = MemoryAddress;
@@ -515,11 +521,11 @@ bool drv::run_hook(DWORD ProcessId, PVOID Address, Shellparam* param,PVOID64* Ho
 		Hookparam = hook_params_alloc_memory(ProcessId,Address, param);
 		if (Hookparam != NULL)
 		{
-			write_mem(ProcessId, Porx, sizeof(g_HookCode), g_HookCode, ERWTYPE::MDL);
+			write_mem(ProcessId, Porx, sizeof(g_HookCode), g_HookCode, ERWTYPE::MmCopy);
 			if (hook_fix_proxy(ProcessId,Porx, Hookparam, sizeof(g_HookCode)))
 			{
 				*HookAddressMemory = Porx;
-				return hook_GetForegroundWindow(ProcessId,Porx);
+				return hook_TranslateMessage(ProcessId,Porx);
 			}
 			else
 			{
@@ -560,16 +566,16 @@ HookMapdLLparam* drv::hook_params_alloc_memory(DWORD ProcessId, PVOID Address, S
 		if (Parm != NULL)
 		{
 			HookMapdLLparam tempParam = {0};
-			tempParam.FuntionAddress = (ULONG64)TranslateMessageAddress;
+			tempParam.FuntionAddress = reinterpret_cast<ULONG64>(TranslateMessageAddress);
 			tempParam.OrgCodeSize = 12;
 			tempParam.pramAddress = param;
 			tempParam.ShellCodeAddress = Address;
 			tempParam.OrgCode = NULL;
-			alloc_mem(ProcessId,NULL, tempParam.OrgCodeSize, &tempParam.OrgCode, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
+			alloc_mem(ProcessId,NULL, static_cast<ULONG>(tempParam.OrgCodeSize), &tempParam.OrgCode, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
 			tempParam.nRet = false;
 			if (tempParam.OrgCode != NULL)
 			{
-				write_mem(ProcessId, TranslateMessageAddress, tempParam.OrgCodeSize,tempParam.OrgCode, ERWTYPE::MDL);
+				write_mem(ProcessId, tempParam.OrgCode, tempParam.OrgCodeSize, TranslateMessageAddress, ERWTYPE::MmCopy);
 				write<HookMapdLLparam>(ProcessId,Parm, tempParam);
 				return Parm;
 			}
@@ -592,7 +598,7 @@ bool drv::hook_fix_proxy(DWORD ProcessId, PVOID Poxy, HookMapdLLparam* param, SI
 	return FALSE;
 }
 
-bool drv::hook_GetForegroundWindow(DWORD ProcessId, PVOID Poxy)
+bool drv::hook_TranslateMessage(DWORD ProcessId, PVOID Poxy)
 {
 	HMODULE User32DllBabse = GetModuleHandleA("User32.dll");
 	if (User32DllBabse != NULL)
@@ -606,7 +612,13 @@ bool drv::hook_GetForegroundWindow(DWORD ProcessId, PVOID Poxy)
 			};
 			*(PVOID*)&HookCode[2] = (PVOID)Poxy;
 			//hook
-			write_mem(ProcessId,TranslateMessageAddress, sizeof(HookCode),HookCode,ERWTYPE::MDL);
+			ULONG old{};
+			if(protect_mem(ProcessId, TranslateMessageAddress,0x1000,PAGE_EXECUTE_READWRITE,&old))
+			{
+				write_mem(ProcessId, TranslateMessageAddress, sizeof(HookCode), HookCode, ERWTYPE::MmCopy);
+				protect_mem(ProcessId, TranslateMessageAddress, 0x1000, old);
+			}
+			
 			return TRUE;
 		}
 	}

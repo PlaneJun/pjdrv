@@ -4,7 +4,7 @@
 #include "../symbols/symbols.hpp"
 
 
-bool process::get_eprocess(HANDLE ProcessId, PEPROCESS* pEProcess)
+bool process::get_eprocess(const HANDLE ProcessId, PEPROCESS* pEProcess)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	status = PsLookupProcessByProcessId(ProcessId, pEProcess);
@@ -15,29 +15,29 @@ bool process::get_eprocess(HANDLE ProcessId, PEPROCESS* pEProcess)
 	return true;
 }
 
-NTSTATUS process::get_dir_base(HANDLE ProcessId, OUT PUINT64 pDataBase)
+NTSTATUS process::get_dir_base(const HANDLE ProcessId, PUINT64 pDataBase)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
 
-	*pDataBase = *(PUINT64)((PUCHAR)pEProcess + symbols::offsets::data_base_);
-
+	*pDataBase = *reinterpret_cast<PUINT64>(reinterpret_cast<PCHAR>(pEProcess) + symbols::offsets::data_base_);
+	ObDereferenceObject(pEProcess);
 	return STATUS_SUCCESS;
 }
 
-PVOID process::get_module_base(HANDLE ProcessId, const wchar_t* module_name, bool isWow64, PDWORD32 out_size)
+PVOID process::get_module_base(const HANDLE ProcessId, const wchar_t* module_name, bool isWow64, PDWORD32 out_size)
 {
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
-		return NULL;
+		return nullptr;
 	}
 
-	PVOID retBase = NULL;
+	PVOID retBase = nullptr;
 	ULONG retSize = NULL;
 	UNICODE_STRING usModuleName ={0};
 	RtlInitUnicodeString(&usModuleName, module_name);
@@ -46,28 +46,28 @@ PVOID process::get_module_base(HANDLE ProcessId, const wchar_t* module_name, boo
 
 	if (isWow64)
 	{
-		PPEB32 pPeb32 = (PPEB32)PsGetProcessWow64Process(pEProcess);
-		if (pPeb32 == NULL || !pPeb32->Ldr)
+		const PPEB32 pPeb32 = PsGetProcessWow64Process(pEProcess);
+		if (!pPeb32 || !pPeb32->Ldr)
 		{
 			goto exit;
 		}
 
 		// SearchInLoadOrderModuleList
-		PLIST_ENTRY32 pListEntry = reinterpret_cast<PLIST_ENTRY32>(reinterpret_cast<PPEB_LDR_DATA32>(pPeb32->Ldr)->InLoadOrderModuleList.Flink);
-		for (; pListEntry != &((PPEB_LDR_DATA32)pPeb32->Ldr)->InLoadOrderModuleList; pListEntry = reinterpret_cast<PLIST_ENTRY32>(pListEntry->Flink))
+		PLIST_ENTRY32 pListEntry = reinterpret_cast<PLIST_ENTRY32>(pPeb32->Ldr->InLoadOrderModuleList.Flink);
+		for (; pListEntry != &(pPeb32->Ldr)->InLoadOrderModuleList; pListEntry = reinterpret_cast<PLIST_ENTRY32>(pListEntry->Flink))
 		{
 			UNICODE_STRING ustr;
-			PLDR_DATA_TABLE_ENTRY32 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY32, InLoadOrderLinks);
-			if (!MmIsAddressValid((PVOID)pEntry->BaseDllName.Buffer))
+			const auto pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY32, InLoadOrderLinks);
+			if (!MmIsAddressValid(reinterpret_cast<PVOID>(pEntry->BaseDllName.Buffer)))
 			{
 				continue;
 			}
 
-			RtlInitUnicodeString(&ustr, (PWCHAR)pEntry->BaseDllName.Buffer);
+			RtlInitUnicodeString(&ustr, reinterpret_cast<PCWSTR>(pEntry->BaseDllName.Buffer));
 			if (RtlCompareUnicodeString(&ustr, &usModuleName, TRUE) == 0)
 			{
 				retSize = pEntry->SizeOfImage;
-				retBase = (PVOID)pEntry->DllBase;
+				retBase = pEntry->DllBase;
 				break;
 			}
 		}
@@ -80,7 +80,7 @@ PVOID process::get_module_base(HANDLE ProcessId, const wchar_t* module_name, boo
 			goto exit;
 		}
 
-		for (PLIST_ENTRY pListEntry = pPeb->Ldr->InLoadOrderModuleList.Flink; pListEntry != &pPeb->Ldr->InLoadOrderModuleList; pListEntry = pListEntry->Flink)
+		for (auto pListEntry = pPeb->Ldr->InLoadOrderModuleList.Flink; pListEntry != &pPeb->Ldr->InLoadOrderModuleList; pListEntry = pListEntry->Flink)
 		{
 			PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 			if (RtlCompareUnicodeString(&pEntry->BaseDllName, &usModuleName, TRUE) == 0)
@@ -99,9 +99,9 @@ exit:
 	return retBase;
 }
 
-NTSTATUS process::rw_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes, PSIZE_T ReturnBytes, bool Read)
+NTSTATUS process::rw_virtual_memory(const HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes, PSIZE_T ReturnBytes, bool Read)
 {
-	KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();;
+	KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
 
 	PAGED_CODE();
 	if (PreviousMode != KernelMode)
@@ -142,11 +142,13 @@ NTSTATUS process::rw_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, PVOID B
 			}
 			if (Read)
 			{
-				Status = MmCopyVirtualMemory(temp_process, BaseAddress, PsGetCurrentProcess(),Buffer, BufferBytes, PreviousMode, &BytesCopied);
+				Status = MmCopyVirtualMemory(temp_process,
+					BaseAddress, PsGetCurrentProcess(),Buffer, BufferBytes, PreviousMode, &BytesCopied);
 			}
 			else
 			{
-				Status = MmCopyVirtualMemory(PsGetCurrentProcess(), Buffer, temp_process,BaseAddress, BufferBytes, PreviousMode, &BytesCopied);
+				Status = MmCopyVirtualMemory(PsGetCurrentProcess(), 
+					Buffer, temp_process,BaseAddress, BufferBytes, PreviousMode, &BytesCopied);
 			}
 			ObDereferenceObject(temp_process);
 		} while (false);
@@ -168,15 +170,15 @@ NTSTATUS process::rw_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, PVOID B
 	return Status;
 }
 
-NTSTATUS process::alloc_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, SIZE_T RegionSize, ULONG AllocationType, ULONG Protect, _Out_ PVOID out_buffer)
+NTSTATUS process::alloc_virtual_memory(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T RegionSize, ULONG AllocationType, ULONG Protect, _Out_ PVOID out_buffer)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
-	KAPC_STATE apc_state = { 0 };
+	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
 	status = ZwAllocateVirtualMemory(NtCurrentProcess(), &BaseAddress, 0, &RegionSize, AllocationType, Protect);
 	if (NT_SUCCESS(status))
@@ -185,14 +187,14 @@ NTSTATUS process::alloc_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, SIZE
 	}
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
-	*(PULONG_PTR)out_buffer = (ULONG_PTR)BaseAddress;
+	*(PULONG_PTR)out_buffer = reinterpret_cast<ULONG64>(BaseAddress);
 	return status;
 }
 
-NTSTATUS process::query_virtual_memory(HANDLE ProcessId,PVOID addr,PVOID out_buffer)
+NTSTATUS process::query_virtual_memory(const HANDLE ProcessId,PVOID addr,PVOID out_buffer)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
@@ -201,9 +203,10 @@ NTSTATUS process::query_virtual_memory(HANDLE ProcessId,PVOID addr,PVOID out_buf
 	PVOID64 buffer = ExAllocatePool(NonPagedPool, sizeof(MEMORY_BASIC_INFORMATION) + 0x100);
 	if (MmIsAddressValid(buffer))
 	{
-		KAPC_STATE apc_state = { 0 };
+		KAPC_STATE apc_state{};
 		KeStackAttachProcess(pEProcess, &apc_state);
-		status = ZwQueryVirtualMemory(NtCurrentProcess(), addr, MemoryBasicInformation, buffer, sizeof(MEMORY_BASIC_INFORMATION), NULL);
+		status = ZwQueryVirtualMemory(NtCurrentProcess(),
+			addr, MemoryBasicInformation, buffer, sizeof(MEMORY_BASIC_INFORMATION), nullptr);
 		KeUnstackDetachProcess(&apc_state);
 		RtlCopyMemory(out_buffer, buffer, sizeof(MEMORY_BASIC_INFORMATION));
 		ExFreePool(buffer);
@@ -212,16 +215,16 @@ NTSTATUS process::query_virtual_memory(HANDLE ProcessId,PVOID addr,PVOID out_buf
 	return status;
 }
 
-NTSTATUS process::free_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, SIZE_T RegionSize)
+NTSTATUS process::free_virtual_memory(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T RegionSize)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
 
-	KAPC_STATE apc_state = { 0 };
+	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
 	status = ZwFreeVirtualMemory(NtCurrentProcess(), &BaseAddress, &RegionSize, MEM_RELEASE);
 	KeUnstackDetachProcess(&apc_state);
@@ -229,170 +232,176 @@ NTSTATUS process::free_virtual_memory(HANDLE ProcessId, PVOID BaseAddress, SIZE_
 	return status;
 }
 
-void process::write_vmem_mdl(HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes)
+void process::write_vmem_mdl(const HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes, PSIZE_T retBytes)
 {
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return;
 	}
 
-	if (MmHighestUserAddress > BaseAddress && MmHighestUserAddress > ((PCHAR)BaseAddress + BufferBytes))
+	if (MmHighestUserAddress > BaseAddress && MmHighestUserAddress > (static_cast<PCHAR>(BaseAddress) + BufferBytes))
 	{
 		if (PsGetProcessExitStatus(pEProcess) == STATUS_PENDING)
 		{
-			PVOID lpMem = ExAllocatePool(NonPagedPool, BufferBytes);
-			if (lpMem)
-			{
-				RtlZeroMemory(lpMem, BufferBytes);
-			}
-
-			RtlCopyMemory(lpMem, Buffer, BufferBytes);
-			KAPC_STATE apc_state = { 0 };
+			KAPC_STATE apc_state = { nullptr };
 			KeStackAttachProcess(pEProcess, &apc_state);
-			if (MmIsAddressValid(BaseAddress) && MmIsAddressValid((PCHAR)BaseAddress + BufferBytes) && lpMem)
+			if (MmIsAddressValid(BaseAddress) && MmIsAddressValid(static_cast<PCHAR>(BaseAddress) + BufferBytes))
 			{
-				PMDL mdl = MmCreateMdl(NULL, BaseAddress, BufferBytes);
-				if (mdl)
+				if (const PMDL mdl = MmCreateMdl(NULL, BaseAddress, BufferBytes))
 				{
-					MmBuildMdlForNonPagedPool(mdl);
-					PVOID page = MmMapLockedPages(mdl, KernelMode);
-					if (page)
-					{
-						RtlCopyMemory(page, lpMem, BufferBytes);
+					__try {
+						MmBuildMdlForNonPagedPool(mdl);
+						const PVOID page = MmMapLockedPages(mdl, KernelMode);
+						if (page)
+						{
+							RtlCopyMemory(page, Buffer, BufferBytes);
+						}
+						MmUnmapLockedPages(page, mdl);
+						IoFreeMdl(mdl);
 					}
-					MmUnmapLockedPages(page, mdl);
-					IoFreeMdl(mdl);
+					__except(1){}
 				}
 			}
 			KeUnstackDetachProcess(&apc_state);
-			if (lpMem)
-			{
-				ExFreePool(lpMem);
-			}
 		}
 	}
 	ObDereferenceObject(pEProcess);
 }
 
-void process::read_vmem_cpy(HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes)
+void process::read_vmem_cpy(const HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes, PSIZE_T retBytes)
 {
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return;
 	}
 
-	if (MmHighestUserAddress > BaseAddress && MmHighestUserAddress > ((PCHAR)BaseAddress + BufferBytes))
+	if (MmHighestUserAddress > BaseAddress && MmHighestUserAddress > (static_cast<PCHAR>(BaseAddress) + BufferBytes))
 	{
 		if (PsGetProcessExitStatus(pEProcess) == STATUS_PENDING)
 		{
-			PVOID lpMem = ExAllocatePool(NonPagedPool, BufferBytes);
-			if (lpMem)
-			{
-				RtlZeroMemory(lpMem, BufferBytes);
-			}
-
-			KAPC_STATE apc_state = { 0 };
+			KAPC_STATE apc_state{};
 			KeStackAttachProcess(pEProcess, &apc_state);
-			if (MmIsAddressValid(BaseAddress) && MmIsAddressValid((PCHAR)BaseAddress + BufferBytes) && lpMem)
+			if (MmIsAddressValid(BaseAddress) && MmIsAddressValid(static_cast<PCHAR>(BaseAddress) + BufferBytes))
 			{
-				RtlCopyMemory(lpMem, BaseAddress, BufferBytes);
+				__try{
+					ProbeForRead(BaseAddress, BufferBytes, 1);
+					RtlCopyMemory(Buffer, BaseAddress, BufferBytes);
+				}
+				__except(1){}
 			}
 			KeUnstackDetachProcess(&apc_state);
-			if (lpMem)
-			{
-				RtlCopyMemory(Buffer, lpMem, BufferBytes);
-				ExFreePool(lpMem);
-			}
 		}
 	}
 	ObDereferenceObject(pEProcess);
 }
 
-void process::read_vmem_physic(HANDLE ProcessId, PVOID BaseAddress, _Out_ PVOID Buffer, SIZE_T BufferBytes)
+NTSTATUS process::read_vmem_physic(const HANDLE ProcessId, PVOID BaseAddress, _Out_ PVOID Buffer, SIZE_T BufferBytes, PSIZE_T retBytes)
 {
 	ULONG64 uDirBase = NULL;
 	NTSTATUS status = get_dir_base(ProcessId, &uDirBase);
-	if (!NT_SUCCESS(status)) {
-		return;
-	}
 
-	// 将虚拟地址转化成物理地址
-	status = memory::translate_addrsss(uDirBase, reinterpret_cast<PUINT64>(&BaseAddress));
-	if (!NT_SUCCESS(status)) {
-		return;
-	}
+	SIZE_T CurOffset = 0;
+	SIZE_T TotalSize = BufferBytes;
+	while (TotalSize)
+	{
+		uint64_t CurPhysAddr = memory::translate_addrsss(uDirBase, reinterpret_cast<uint64_t>(BaseAddress) + CurOffset);
+		if (!CurPhysAddr) return STATUS_UNSUCCESSFUL;
 
-	// 读取物理地址内容, 然后修改内容
-	SIZE_T BytesTransferred = NULL;
-	memory::read_physical_addr(BaseAddress, Buffer, BufferBytes, &BytesTransferred);
+		ULONG64 ReadSize = min(PAGE_SIZE - (CurPhysAddr & 0xFFF), TotalSize);
+		SIZE_T BytesRead = 0;
+		status = memory::read_physical_addr(reinterpret_cast<PVOID64>(CurPhysAddr), static_cast<uint8_t*>(Buffer) + CurOffset, ReadSize, &BytesRead);
+		TotalSize -= BytesRead;
+		CurOffset += BytesRead;
+		if (status != STATUS_SUCCESS)
+		{
+			break;
+		}
+		if (BytesRead == 0)
+		{
+			break;
+		}
+	}
+	*retBytes = CurOffset;
+	return status;
 }
 
-void process::write_vmem_physic(HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes)
+NTSTATUS process::write_vmem_physic(const HANDLE ProcessId, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferBytes, PSIZE_T retBytes)
 {
 	ULONG64 uDirBase = NULL;
 	NTSTATUS status = get_dir_base(ProcessId, &uDirBase);
-	if (!NT_SUCCESS(status)) {
-		return;
-	}
 
-	// 将虚拟地址转化成物理地址
-	status = memory::translate_addrsss(uDirBase, reinterpret_cast<PUINT64>(&BaseAddress));
-	if (!NT_SUCCESS(status)) {
-		return;
-	}
+	SIZE_T CurOffset = 0;
+	SIZE_T TotalSize = BufferBytes;
+	while (TotalSize)
+	{
+		uint64_t CurPhysAddr = memory::translate_addrsss(uDirBase, reinterpret_cast<uint64_t>(BaseAddress) + CurOffset);
+		if (!CurPhysAddr) return STATUS_UNSUCCESSFUL;
 
-	// 读取物理地址内容, 然后修改内容
-	SIZE_T BytesTransferred = NULL;
-	memory::write_physical_addr(BaseAddress, Buffer, BufferBytes, &BytesTransferred);
+		ULONG64 WriteSize = min(PAGE_SIZE - (CurPhysAddr & 0xFFF), TotalSize);
+		SIZE_T BytesWritten = 0;
+		status = memory::write_physical_addr(reinterpret_cast<PVOID64>(CurPhysAddr), static_cast<uint8_t*>(Buffer) + CurOffset, WriteSize, &BytesWritten);
+		TotalSize -= BytesWritten;
+		CurOffset += BytesWritten;
+		if (status != STATUS_SUCCESS)
+		{
+			break;
+		}
+		if (BytesWritten == 0)
+		{
+			break;
+		}
+	}
+	*retBytes = CurOffset;
+	return status;
 }
 
-NTSTATUS process::protect_vmem(HANDLE ProcessId, PVOID BaseAddress, SIZE_T NumberOfBytesToProtect, ULONG NewAccessProtection)
+NTSTATUS process::protect_vmem(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T NumberOfBytesToProtect, ULONG NewAccessProtection,PULONG OldAccessProtection)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
-	KAPC_STATE apc_state = { 0 };
+	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
-	ULONG old = NULL;
-	status = ZwProtectVirtualMemory(NtCurrentProcess(), &BaseAddress, &NumberOfBytesToProtect, NewAccessProtection, &old);
+	status = ZwProtectVirtualMemory(NtCurrentProcess(), &BaseAddress, &NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
 	return status;
 }
 
-NTSTATUS process::create_thread(HANDLE ProcessId, PVOID entry, PVOID params, PHANDLE handler)
+NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID params, PHANDLE handler)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
-	PUSER_THREAD_START_ROUTINE pEntry = reinterpret_cast<PUSER_THREAD_START_ROUTINE>(entry);
-	KAPC_STATE apc_state = { 0 };
+	auto pEntry = reinterpret_cast<PUSER_THREAD_START_ROUTINE>(entry);
+	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
-	OBJECT_ATTRIBUTES obj_attr = { 0 };
+	OBJECT_ATTRIBUTES obj_attr{};
 	InitializeObjectAttributes(&obj_attr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	status = ZwCreateThreadEx(handler, THREAD_ALL_ACCESS, &obj_attr, ZwCurrentProcess(), pEntry, params, 0, 0, 0x1000, 0x100000, NULL);
+	status = ZwCreateThreadEx(handler, THREAD_ALL_ACCESS, 
+		&obj_attr, ZwCurrentProcess(), pEntry, params, 0, 0, 0x1000, 0x100000, nullptr);
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
 	return status;
 }
 
-NTSTATUS process::close_handle(HANDLE ProcessId, HANDLE handler)
+NTSTATUS process::close_handle(const HANDLE ProcessId, HANDLE handler)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	PEPROCESS pEProcess = NULL;
+	PEPROCESS pEProcess = nullptr;
 	if (!get_eprocess(ProcessId, &pEProcess))
 	{
 		return status;
 	}
-	KAPC_STATE apc_state = { 0 };
+	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
 	status = ZwClose(handler);
 	KeUnstackDetachProcess(&apc_state);

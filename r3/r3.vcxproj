@@ -152,6 +152,7 @@
     <ClInclude Include="drv\drv.h" />
     <ClInclude Include="md5\md5.h" />
     <ClInclude Include="pdb\Pdb.h" />
+    <ClInclude Include="test_dll.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

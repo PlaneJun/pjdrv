@@ -53,5 +53,8 @@
     <ClInclude Include="md5\md5.h">
       <Filter>md5</Filter>
     </ClInclude>
+    <ClInclude Include="test_dll.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
