@@ -129,3 +129,37 @@ NTSTATUS memory::write_physical_addr(IN PVOID64 address, IN PVOID64 buffer, IN S
 	MmUnmapIoSpace(map, size);
 	return STATUS_SUCCESS;
 }
+
+SIZE_T memory::copy_mem_safe(PVOID dest, PVOID src, SIZE_T len)
+{
+	// NOTE:还有一个未公开的函数也是可以用的,基于SEH的安全拷贝函数:PiDqSerializationWrite
+	// refs:https://www.win32k.cn/d/83-pidqserializationwrite-nei-he-sehan-quan-de-kao-bei-han-shu
+
+	if (!MmIsAddressValid(dest) || !MmIsAddressValid(src))
+	{
+		return 0;
+	}
+
+	SIZE_T cur_offset = 0;
+	SIZE_T total_size = len;
+
+	uint64_t to_ = reinterpret_cast<uint64_t>(dest);
+	uint64_t from_ = reinterpret_cast<uint64_t>(src);
+	while (total_size)
+	{
+		
+		SIZE_T ret_bytes = NULL;
+		MM_COPY_ADDRESS mcaddr{};
+		mcaddr.VirtualAddress = reinterpret_cast<PVOID>(from_);
+		ULONG64 rsize = min(PAGE_SIZE, total_size);
+		if(NT_SUCCESS(MmCopyMemory(reinterpret_cast<PVOID>(to_), mcaddr,rsize, MM_COPY_MEMORY_VIRTUAL,&ret_bytes)))
+		{
+			total_size -= rsize;
+			cur_offset += rsize;
+
+			to_ += cur_offset;
+			from_ += cur_offset;
+		}
+	}
+	return cur_offset;
+}

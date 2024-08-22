@@ -39,6 +39,12 @@
     <Filter Include="symbols">
       <UniqueIdentifier>{1b5b4838-dacf-4dcf-b935-098e4233e1a6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="thread">
+      <UniqueIdentifier>{7e0f3a8b-5121-4646-bb9b-dfc97da1851b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="log">
+      <UniqueIdentifier>{0ea385c6-01a2-4cd1-8f76-9f7a8f5ead8e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -70,6 +76,9 @@
     </ClCompile>
     <ClCompile Include="ssdt\ssdt.cpp">
       <Filter>ssdt</Filter>
+    </ClCompile>
+    <ClCompile Include="thread\thread.cpp">
+      <Filter>thread</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -105,6 +114,12 @@
     </ClInclude>
     <ClInclude Include="symbols\symbols.hpp">
       <Filter>symbols</Filter>
+    </ClInclude>
+    <ClInclude Include="thread\thread.h">
+      <Filter>thread</Filter>
+    </ClInclude>
+    <ClInclude Include="log\log.hpp">
+      <Filter>log</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

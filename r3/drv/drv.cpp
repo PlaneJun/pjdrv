@@ -3,24 +3,47 @@
 #include "../pdb/Pdb.h"
 #include "dll_shellcode.h"
 
-void drv::send_control(const PDataParams dp)
+
+bool drv::send_control(communicate::ECMD cmd, uint32_t pid, void* buffer)
 {
+	communicate::Params dp{};
+	dp.cmd = cmd;
+	dp.pid = pid;
+	dp.buffer = buffer;
+
+#ifdef IO_ahcache
 	//写入TEB
-	__writegsqword(0x38, reinterpret_cast<DWORD64>(dp));
+	__writegsqword(0x38, reinterpret_cast<DWORD64>(&dp));
 	DWORD real_bytes = NULL;
 	DWORD64 data = NULL;
-	DeviceIoControl(hFile_, 0x100, &data, sizeof(data), &data, sizeof(data), &real_bytes, NULL);
+	DeviceIoControl(hFile_, 0x100, &data, sizeof(data), &data, sizeof(data), &real_bytes, nullptr);
+#else
+	DeviceIoControl(hFile_, IOCTL_NEITHER, &dp, sizeof(communicate::Params), NULL, NULL, NULL, NULL);
+#endif
+
+	// 错误时记录失败码
+	if(dp.status != 0)
+	{
+		lastError_ = dp.status;
+	}
+
+	return dp.status == 0;
 }
 
 drv::ERROR_CODE drv::init()
 {
-	drv::ERROR_CODE status_code = ERROR_CODE::CODE_OK;
+	ERROR_CODE status_code = CODE_OK;
 	do
 	{
 		// 是否可以打开设备
 		if (!hFile_)
 		{
-			hFile_ = CreateFile(L"\\\\.\\ahcache",
+#ifdef IO_ahcache
+			wchar_t link_name[] = L"\\\\.\\ahcache";
+#else
+			wchar_t link_name[] = L"\\\\.\\rongshen_link";
+#endif
+			hFile_ = CreateFile(link_name,
 				GENERIC_READ | GENERIC_WRITE,
 				NULL, NULL,
 				OPEN_EXISTING,
@@ -35,10 +58,8 @@ drv::ERROR_CODE drv::init()
 
 		// 获取状态码
 		int ctrl_code = NULL;
-		DataParams dp = { 0 };
-		dp.cmd = CMD_CONTROL;
-		send_control(&dp);
-		if ((ULONG)dp.cmd != 1 )
+		send_control(communicate::CMD_CONTROL,0,&ctrl_code);
+		if (ctrl_code != 1 )
 		{
 			status_code = ERROR_CODE::CODE_CTRL_FAILED;
 			break;
@@ -61,98 +82,103 @@ drv::ERROR_CODE drv::init()
 			break;
 		}
 
-		RtlZeroMemory(&dp, sizeof(DataParams));
-		dp.params.symbs.vad_root = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"VadRoot");
-		dp.params.symbs.data_base = EzPdbGetStructPropertyOffset(&pdb, "_KPROCESS", L"DirectoryTableBase");
-		dp.params.symbs.KeServiceDescriptorTable = EzPdbGetRva(&pdb, "KeServiceDescriptorTable");
-		printf("vad_root = %x\n", dp.params.symbs.vad_root);
-		printf("data_base = %x\n", dp.params.symbs.data_base);
-		printf("KeServiceDescriptorTable = %p\n",dp.params.symbs.KeServiceDescriptorTable);
-		if (dp.params.symbs.vad_root <= 0)
+		communicate::Symbols symbs{};
+		symbs.eprocess.VadRoot = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"VadRoot");
+		symbs.eprocess.DirectoryTableBase = EzPdbGetStructPropertyOffset(&pdb, "_KPROCESS", L"DirectoryTableBase");
+		symbs.eprocess.ThreadListHead = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"ThreadListHead");
+		symbs.eprocess.ActiveProcessLinks = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"ActiveProcessLinks");
+		symbs.eprocess.UniqueProcessId = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"UniqueProcessId");
+		symbs.ethread.Cid = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"Cid");
+		symbs.ethread.ThreadListEntry = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"ThreadListEntry");
+		symbs.ethread.Win32StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"Win32StartAddress");
+		symbs.ethread.StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"StartAddress");
+		symbs.global.KeServiceDescriptorTable = EzPdbGetRva(&pdb, "KeServiceDescriptorTable");
+		symbs.global.PspNotifyEnableMask = EzPdbGetRva(&pdb, "PspNotifyEnableMask");
+		symbs.global.ExDestroyHandle = EzPdbGetRva(&pdb, "ExDestroyHandle");
+		symbs.global.ExMapHandleToPointer = EzPdbGetRva(&pdb, "ExMapHandleToPointer");
+		symbs.global.PspCidTable = EzPdbGetRva(&pdb, "PspCidTable");
+		
+		DBG_LOG("VadRoot = %x", symbs.eprocess.VadRoot);
+		DBG_LOG("DirectoryTableBase = %x", symbs.eprocess.DirectoryTableBase);
+		DBG_LOG("ThreadListHead = %x", symbs.eprocess.ThreadListHead);
+		DBG_LOG("Cid = %x", symbs.ethread.Cid);
+		DBG_LOG("ThreadListEntry = %x", symbs.ethread.ThreadListEntry);
+		DBG_LOG("Win32StartAddress = %x", symbs.ethread.Win32StartAddress);
+		DBG_LOG("StartAddress = %x", symbs.ethread.StartAddress);
+		DBG_LOG("KeServiceDescriptorTable = %p", symbs.global.KeServiceDescriptorTable);
+		DBG_LOG("PspNotifyEnableMask = %p", symbs.global.PspNotifyEnableMask);
+		DBG_LOG("ExMapHandleToPointer = %p", symbs.global.ExMapHandleToPointer);
+		DBG_LOG("ExDestroyHandle = %p", symbs.global.ExDestroyHandle);
+		DBG_LOG("PspCidTable = %p", symbs.global.PspCidTable);
+		if (symbs.eprocess.VadRoot <= 0 || symbs.eprocess.DirectoryTableBase <=0 || symbs.global.KeServiceDescriptorTable <= 0 || symbs.global.PspNotifyEnableMask <= 0)
 		{
 			status_code = ERROR_CODE::CODE_GET_SYMBOLS_FAILED;
 			break;
 		}
 		EzPdbUnload(&pdb);
-		dp.cmd = CMD_Symbol;
-		send_control(&dp);
+		send_control(communicate::ECMD::CMD_Symbol,0,&symbs);
 
 	} while (FALSE);
 
 	return status_code;
 }
 
-
-
 PVOID64 drv::get_process_module(DWORD ProcessId,PCWCH ModuleName, bool isWow64)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_GetProcessModules;
-	dp.pid = ProcessId;
-	dp.params.m.module_name = (PVOID64)ModuleName;
-	dp.params.m.wow64 = isWow64;
-
-	send_control(&dp);
-	return dp.params.m.output;
+	communicate::Module buffer = { 0 };
+	buffer.module_name = (void*)(ModuleName);
+	send_control(communicate::ECMD::CMD_R3_GetProcessModules,ProcessId,&buffer);
+	return buffer.output;
 }
+
 bool drv::get_export_address(DWORD ProcessId, PCWCH ModuleName , bool isWow64,PCCH FunctionName, PVOID64 Output)
 {
-	DataParams dp = { 0 };
-
 	PVOID64 ModuleBase = get_process_module(ProcessId,  ModuleName, isWow64);
 	if (ModuleBase)
 	{
-		DataParams dp = { 0 };
-		dp.cmd = CMD_GetExportFunction;
-		dp.pid = ProcessId;
-		dp.params.m.module_base = ModuleBase;
-		dp.params.m.module_name = (PVOID64)FunctionName;
-		dp.params.m.output = Output;
-		send_control(&dp);
-		return TRUE;
+		communicate::Module module{};
+		module.module_base = ModuleBase;
+		module.module_name = (PVOID64)FunctionName;
+		module.output = Output;
+		return send_control(communicate::ECMD::CMD_R3_GetExportFunction, ProcessId, &module);
 	}
 	return FALSE;
 }
-bool drv::read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, ERWTYPE type)
-{
-	DataParams dp = { 0 };
-	dp.cmd = CMD_ReadMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.length = ReadSize;
-	dp.params.mem.output = Output;
-	dp.params.mem.rw_type = type;
 
-	send_control(&dp);
-	return TRUE;
-}
-bool drv::write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer, ERWTYPE type)
+bool drv::read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, PSIZE_T retBytes, communicate::ERWTYPE type)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_WriteMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.length = WriteSize;
-	dp.params.mem.buffer = WriteBuffer;
-	dp.params.mem.rw_type = type;
-
-	send_control(&dp);
-	return TRUE;
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.length = ReadSize;
+	mem.output = Output;
+	mem.rw_type = type;
+	bool status = send_control(communicate::ECMD::CMD_R3_ReadMemory,ProcessId,&mem);
+	if (retBytes) *retBytes = mem.ret_bytes;
+	return status;
 }
+bool drv::write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer, PSIZE_T retBytes, communicate::ERWTYPE type)
+{
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.length = WriteSize;
+	mem.buffer = WriteBuffer;
+	mem.rw_type = type;
+	bool status = send_control(communicate::ECMD::CMD_R3_WriteMemory,ProcessId,&mem);
+	if (retBytes) *retBytes = mem.ret_bytes;
+	return status;
+}
+
 bool drv::alloc_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, PVOID64 Output, ULONG AllocationType, ULONG Protect)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_AllocMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.length = Size;
-	dp.params.mem.output = Output;
-	dp.params.mem.alloctype = AllocationType;
-	dp.params.mem.proctect = Protect;
-
-	send_control(&dp);
-	return TRUE;
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.length = Size;
+	mem.output = Output;
+	mem.alloctype = AllocationType;
+	mem.proctect = Protect;
+	return send_control(communicate::ECMD::CMD_R3_AllocMemory, ProcessId, &mem);
 }
+
 uint64_t drv::allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULONG AllocationType, ULONG Protect)
 {
 	ULONG64 A = (ULONG64)Address / 65536;
@@ -163,116 +189,124 @@ uint64_t drv::allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULON
 
 	do
 	{
-		alloc_mem(ProcessId, (PVOID64)AllocPtr, Size, &AllocBase, AllocationType, Protect);
-		if (AllocBase == 0)
+		if(alloc_mem(ProcessId, reinterpret_cast<PVOID64>(AllocPtr), Size, &AllocBase, AllocationType, Protect))
 		{
-			if (Direc == FALSE)
+			if (AllocBase == 0)
 			{
-				if (Address + 2147483642 >= AllocPtr)
+				if (Direc == FALSE)
 				{
-					Increase = Increase + 65536;
+					if (Address + 2147483642 >= AllocPtr)
+					{
+						Increase = Increase + 65536;
+					}
+					else
+					{
+						Increase = 0;
+						Direc = TRUE;
+					}
 				}
 				else
 				{
-					Increase = 0;
-					Direc = TRUE;
+					if (Address - 2147483642 <= AllocPtr)
+					{
+						Increase = Increase - 65536;
+					}
+					else
+					{
+						return 0;
+					}
 				}
-			}
-			else
-			{
-				if (Address - 2147483642 <= AllocPtr)
-				{
-					Increase = Increase - 65536;
-				}
-				else
-				{
-					return 0;
-				}
-			}
 
-			AllocPtr = AllocPtr + Increase;
+				AllocPtr = AllocPtr + Increase;
+			}
 		}
-
-
+		else
+		{
+			break;
+		}
 	} while (AllocBase == 0);
 
 	return AllocBase;
 }
 bool drv::protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newProtect, PULONG oldProtect)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_ProtectVirtualMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.length = Size;
-	dp.params.mem.proctect = newProtect;
-
-	send_control(&dp);
-
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.length = Size;
+	mem.proctect = newProtect;
+	bool status = send_control(communicate::ECMD::CMD_R3_ProtectVirtualMemory,ProcessId,&mem);
 	if(oldProtect != NULL)
 	{
-		*oldProtect = dp.params.mem.oldprotect;
+		*oldProtect = mem.oldprotect;
 	}
-	return TRUE;
+	return status;
 }
 bool drv::free_mem(DWORD ProcessId, PVOID64 Address, ULONG Size)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_FreeMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.length = Size;
-
-	send_control(&dp);
-	return TRUE;
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.length = Size;
+	return send_control(communicate::ECMD::CMD_R3_FreeMemory, ProcessId, &mem);
 }
 bool drv::query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_QueryVirtualMemory;
-	dp.pid = ProcessId;
-	dp.params.mem.addr = Address;
-	dp.params.mem.output = Output;
-
-	send_control(&dp);
-	return TRUE;
+	communicate::Memory mem{};
+	mem.addr = Address;
+	mem.output = Output;
+	return send_control(communicate::ECMD::CMD_R3_QueryVirtualMemory, ProcessId, &mem);
 }
 
-HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params)
+HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool disable_notify,bool hide, PULONG tid)
 {
 	HANDLE retHandle = NULL;
-	DataParams dp = { 0 };
-	dp.cmd = CMD_CreateThread;
-	dp.pid = ProcessId;
-	dp.params.thread.handler = &retHandle;
-	dp.params.thread.entry= entry;
-	dp.params.thread.params = params;
-
-	send_control(&dp);
-	return dp.params.thread.handler;
+	communicate::Thread thread{};
+	thread.handler = &retHandle;
+	thread.entry= entry;
+	thread.params = params;
+	thread.disable_notify = disable_notify;
+	thread.hide = hide;
+	if(send_control(communicate::ECMD::CMD_R3_CreateThread, ProcessId, &thread))
+	{
+		DBG_LOG("threadid = %x", thread.threadid);
+		if(tid != NULL)
+		{
+			*tid = thread.threadid;
+		}
+	}
+	return thread.handler;
 }
 
 bool drv::mouse_event_ex(DWORD x, DWORD y, USHORT flag)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_MouseEvent;
-	dp.params.device.mx = x;
-	dp.params.device.my = y;
-	dp.params.device.flags = flag;
-
-	send_control(&dp);
-	return TRUE;
+	communicate::Device device{};
+	device.mx = x;
+	device.my = y;
+	device.flags = flag;
+	return send_control(communicate::ECMD::CMD_R3_MouseEvent, 0, &device);
 }
 bool drv::keybd_event_ex(DWORD KeyCode, USHORT flag)
 {
-	DataParams dp = { 0 };
-	dp.cmd = CMD_KbdEvent;
-	dp.params.device.keycode = KeyCode;
-	dp.params.device.flags = flag;
+	communicate::Device device{};
+	device.keycode = KeyCode;
+	device.flags = flag;
+	return send_control(communicate::CMD_R3_KbdEvent, 0, &device);
+}
 
-	send_control(&dp);
+bool drv::close_handle(DWORD ProcessId, HANDLE handler)
+{
+	communicate::Thread thread{};
+	thread.handler = handler;
+	send_control(communicate::ECMD::CMD_R3_CloseHandle, ProcessId, &thread);
 	return TRUE;
 }
+
+
+bool drv::dump_module(DWORD ProcessId, PCCH module_name, PCCH save_path)
+{
+
+	return TRUE;
+}
+
 bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 {
 	PIMAGE_DOS_HEADER pDosHeader = NULL;
@@ -290,43 +324,58 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	{
 		return NULL;
 	}
+	getchar();
 	auto nAlign = pNTHeader->OptionalHeader.SectionAlignment;
 	auto uSize = get_pe_size(pNTHeader, pSectionHeader, nAlign);
-	PVOID pMemoryAddress = NULL;
-	alloc_mem(ProcessId, NULL, uSize, &pMemoryAddress,MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN,PAGE_EXECUTE_READWRITE);
-
-	if (!pMemoryAddress)
+	PVOID pMemoryAddress = nullptr;
+	if (!alloc_mem(ProcessId, nullptr, uSize, &pMemoryAddress, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) && 
+		 !pMemoryAddress)
 	{
+		DBG_LOG("alloc pMemoryAddress failed,err = %x",get_last_error());
 		return false;
 	}
+	DBG_LOG("alloc pMemoryAddress = %p", pMemoryAddress);
 
 	if (!copy_sections(ProcessId,pNTHeader, pSectionHeader, dll_data, pMemoryAddress))
 	{
 		return false;
 	}
+	DBG_LOG("copy_sections ok!");
 
 	//fix reloc
 	fix_loc_datas(ProcessId,pNTHeader, pMemoryAddress);
 	Shellparam* param = NULL;
-	alloc_mem(ProcessId, NULL, sizeof(Shellparam), &param, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
-	if (!param)
+	if(!alloc_mem(ProcessId, NULL, sizeof(Shellparam), &param, MEM_COMMIT |  MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) && 
+		!param)
 	{
+		DBG_LOG("alloc Shellparam failed,err = %x", get_last_error());
 		return false;
 	}
+	DBG_LOG("Shellparam = %p", param);
+
 	// fill shellcode params
 	fill_params(ProcessId,param, pMemoryAddress, pDosHeader->e_lfanew);
 	PVOID ShllCodeMeory = NULL;
-	alloc_mem(ProcessId, NULL, sizeof(g_ShellCodeExDll), &ShllCodeMeory, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
-	if (ShllCodeMeory == NULL)
+	if(!alloc_mem(ProcessId, NULL, sizeof(g_ShellCodeExDll), &ShllCodeMeory, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) &&
+		!ShllCodeMeory)
 	{
+		DBG_LOG("alloc ShllCodeMeory failed,err = %x", get_last_error());
 		return false;
 	}
-	write_mem(ProcessId,ShllCodeMeory, sizeof(g_ShellCodeExDll),g_ShellCodeExDll,ERWTYPE::MmCopy);
+	DBG_LOG("ShllCodeMeory = %p", ShllCodeMeory);
+	if(!write_mem(ProcessId,ShllCodeMeory, sizeof(g_ShellCodeExDll),g_ShellCodeExDll, NULL,communicate::ERWTYPE::MmCopy))
+	{
+		DBG_LOG("write ShellCodeExDll failed,err = %x", get_last_error());
+		return false;
+	}
+
 	PVOID64 pHookAddressMemory = NULL;
 	run_hook(ProcessId,ShllCodeMeory, param,&pHookAddressMemory);
 	Shellparam wait_inject{};
 	if (pHookAddressMemory != NULL)
 	{
+		DBG_LOG("wait inject");
+
 		do
 		{
 			wait_inject = read<Shellparam>(ProcessId,param);
@@ -334,23 +383,42 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 		} while (wait_inject.IsOk != 1);
 		Sleep(50);
 
+		DBG_LOG("inject done");
 	FreeMem:
 		if (param)
 		{
-			free_mem(ProcessId, param, sizeof(Shellparam));
-			param = NULL;
+			if(free_mem(ProcessId, param, sizeof(Shellparam)))
+			{
+				param = NULL;
+			}
+			else
+			{
+				DBG_LOG("free Shellparam failed,err = %x", get_last_error());
+			}
 		}
 
 		if (ShllCodeMeory)
 		{
-			free_mem(ProcessId, ShllCodeMeory, sizeof(g_ShellCodeExDll));
-			ShllCodeMeory = NULL;
+			if(free_mem(ProcessId, ShllCodeMeory, sizeof(g_ShellCodeExDll)))
+			{
+				ShllCodeMeory = NULL;
+			}
+			else
+			{
+				DBG_LOG("free ShllCodeMeory failed,err = %x", get_last_error());
+			}
 		}
 
 		if (pHookAddressMemory)
 		{
-			free_mem(ProcessId, pHookAddressMemory, sizeof(g_HookCode));
-			pHookAddressMemory = NULL;
+			if(free_mem(ProcessId, pHookAddressMemory, sizeof(g_HookCode)))
+			{
+				pHookAddressMemory = NULL;
+			}
+			else
+			{
+				DBG_LOG("free pHookAddressMemory failed,err = %x", get_last_error());
+			}
 		}
 
 	}
@@ -360,12 +428,6 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	}
 
 	return pMemoryAddress;
-}
-
-bool drv::dump_module(DWORD ProcessId, PCCH module_name, PCCH save_path)
-{
-	
-	return TRUE;
 }
 
 bool drv::get_image_dos_header(PVOID data, PIMAGE_DOS_HEADER* DosHead)
@@ -417,7 +479,7 @@ bool drv::copy_sections(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PIMAGE_SECTI
 	auto SectionSize = NtHread->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER);
 	auto MoveSize = HeaderSize + SectionSize;
 	//复制头和段信息
-	write_mem(ProcessId,MemoryAddress, static_cast<ULONG>(MoveSize),data, ERWTYPE::MmCopy);
+	write_mem(ProcessId,MemoryAddress, static_cast<ULONG>(MoveSize),data,NULL,communicate::ERWTYPE::MmCopy);
 
 	//复制每个节
 	for (int i = 0; i < NtHread->FileHeader.NumberOfSections; ++i)
@@ -425,7 +487,7 @@ bool drv::copy_sections(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PIMAGE_SECTI
 		if (SectionHeader[i].VirtualAddress == 0 || SectionHeader[i].SizeOfRawData == 0)
 			continue;
 		auto pSectionAddress = reinterpret_cast<PVOID>(reinterpret_cast<uint64_t>(MemoryAddress) + SectionHeader[i].VirtualAddress);
-		write_mem(ProcessId, pSectionAddress, SectionHeader[i].SizeOfRawData, static_cast<PCHAR>(data) + SectionHeader[i].PointerToRawData, ERWTYPE::MmCopy);
+		write_mem(ProcessId, pSectionAddress, SectionHeader[i].SizeOfRawData, static_cast<PCHAR>(data) + SectionHeader[i].PointerToRawData, NULL, communicate::ERWTYPE::MmCopy);
 	}
 	return TRUE;
 }
@@ -440,7 +502,8 @@ VOID drv::fix_loc_datas(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PVOID Memory
 
 		//注意重定位表的位置可能和硬盘文件中的偏移地址不同，应该使用加载后的地址
 		PCHAR tmpData = new CHAR[NtHread->OptionalHeader.SizeOfImage];
-		read_mem(ProcessId,MemoryAddress, NtHread->OptionalHeader.SizeOfImage,tmpData, ERWTYPE::MmCopy);
+		ZeroMemory(tmpData, NtHread->OptionalHeader.SizeOfImage);
+		read_mem(ProcessId,MemoryAddress, NtHread->OptionalHeader.SizeOfImage,tmpData, NULL, communicate::ERWTYPE::MmCopy);
 
 		auto pLoc = reinterpret_cast<PIMAGE_BASE_RELOCATION>(reinterpret_cast<uintptr_t>(tmpData)
 			+ NtHread->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
@@ -455,8 +518,8 @@ VOID drv::fix_loc_datas(DWORD ProcessId, PIMAGE_NT_HEADERS NtHread, PVOID Memory
 				if (flags == 0x00003000 || flags == 0x0000A000) //这是一个需要修正的地址
 				{
 					pAddress = reinterpret_cast<DWORD64*>(reinterpret_cast<uintptr_t>(MemoryAddress) + pLoc->VirtualAddress + (pLocData[i] & 0x0FFF));
-					DWORD64 origin = read<DWORD64>(ProcessId,pAddress);
-					write<DWORD64>(ProcessId,pAddress, origin + Delta);
+					DWORD64 origin = read<DWORD64>(ProcessId,pAddress, communicate::ERWTYPE::MmCopy);
+					write<DWORD64>(ProcessId,pAddress, origin + Delta, communicate::ERWTYPE::MmCopy);
 				}
 			}
 			pLoc = reinterpret_cast<decltype(pLoc)>(reinterpret_cast<uintptr_t>(pLoc) + pLoc->SizeOfBlock);
@@ -471,66 +534,78 @@ bool drv::fill_params(DWORD ProcessId,Shellparam* param, PVOID MemoryAddress, DW
 	const HMODULE DllBase = GetModuleHandleA("ntdll.dll");
 	if (DllBase == NULL)
 	{
+		DBG_LOG("get ntdll base failed,err:%d",GetLastError());
 		return FALSE;
 	}
 	Shellparam temp{};
 
 	temp.LdrGetProcedureAddress = reinterpret_cast<LdrGetProcedureAddressT>(GetProcAddress(DllBase, "LdrGetProcedureAddress"));
-	printf("[+]LdrGetProcedureAddress %p\n", temp.LdrGetProcedureAddress);
+	DBG_LOG("LdrGetProcedureAddress %p", temp.LdrGetProcedureAddress);
 
 	temp.dwNtAllocateVirtualMemory = reinterpret_cast<NtAllocateVirtualMemoryT>(GetProcAddress(DllBase, "NtAllocateVirtualMemory"));
-	printf("[+]dwNtAllocateVirtualMemory %p\n", temp.dwNtAllocateVirtualMemory);
+	DBG_LOG("dwNtAllocateVirtualMemory %p", temp.dwNtAllocateVirtualMemory);
 
 	temp.pLdrLoadDll = reinterpret_cast<LdrLoadDllT>(GetProcAddress(DllBase, "LdrLoadDll"));
-	printf("[+]pLdrLoadDll %p\n", temp.pLdrLoadDll);
+	DBG_LOG("pLdrLoadDll %p", temp.pLdrLoadDll);
 
 	temp.RtlInitAnsiString = reinterpret_cast<RtlInitAnsiStringT>(GetProcAddress(DllBase, "RtlInitAnsiString"));
-	printf("[+]RtlInitAnsiString %p\n", temp.RtlInitAnsiString);
+	DBG_LOG("RtlInitAnsiString %p", temp.RtlInitAnsiString);
 
 	temp.RtlAnsiStringToUnicodeString = reinterpret_cast<RtlAnsiStringToUnicodeStringT>(GetProcAddress(DllBase, "RtlAnsiStringToUnicodeString"));
-	printf("[+]RtlAnsiStringToUnicodeString %p\n", temp.RtlAnsiStringToUnicodeString);
+	DBG_LOG("RtlAnsiStringToUnicodeString %p", temp.RtlAnsiStringToUnicodeString);
 
 	temp.RtlFreeUnicodeString = reinterpret_cast<RtlFreeUnicodeStringT>(GetProcAddress(DllBase, "RtlFreeUnicodeString"));
-	printf("[+]RtlFreeUnicodeString %p\n", temp.RtlFreeUnicodeString);
+	DBG_LOG("RtlFreeUnicodeString %p", temp.RtlFreeUnicodeString);
 
 	temp.pNTHeader = reinterpret_cast<PIMAGE_NT_HEADERS>(reinterpret_cast<uintptr_t>(MemoryAddress) + e_lfanew);
-	printf("[+]pNTHeader %p\n", temp.pNTHeader);
+	DBG_LOG("pNTHeader %p", temp.pNTHeader);
 
 	temp.pMemoryAddress = MemoryAddress;
-	printf("[+]pMemoryAddress %p\n", temp.pMemoryAddress);
 
 	write<Shellparam>(ProcessId,param, temp);
 
 	return TRUE;
 }
 
-bool drv::run_remote_hook(DWORD ProcessId, PVOID Address, Shellparam* param)
-{
-	return close_handle(ProcessId, create_thread(ProcessId, Address, param));
-}
-
 bool drv::run_hook(DWORD ProcessId, PVOID Address, Shellparam* param,PVOID64* HookAddressMemory)
 {
-	HookMapdLLparam* Hookparam = NULL;
+	HookMapdLLparam* Hookparam = nullptr;
 	//alloc hook memory
-	PVOID Porx = NULL;
-	alloc_mem(ProcessId, NULL, sizeof(g_HookCode), &Porx, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
-	if (Porx != NULL)
+	PVOID Porx = nullptr;
+	if(alloc_mem(ProcessId, nullptr, sizeof(g_HookCode), &Porx, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) &&
+		Porx)
 	{
-		//fill hook param
-		Hookparam = hook_params_alloc_memory(ProcessId,Address, param);
-		if (Hookparam != NULL)
+		if(PVOID hijack_func = GetProcAddress(GetModuleHandleA("User32.dll"), "GetForegroundWindow"))
 		{
-			write_mem(ProcessId, Porx, sizeof(g_HookCode), g_HookCode, ERWTYPE::MmCopy);
-			if (hook_fix_proxy(ProcessId,Porx, Hookparam, sizeof(g_HookCode)))
+			DBG_LOG("[+]hijack_func = %p\r\n", hijack_func);
+
+			//fill hook param
+			Hookparam = hook_params_alloc_memory(ProcessId, Address, param, hijack_func);
+			if (Hookparam != nullptr)
 			{
-				*HookAddressMemory = Porx;
-				return hook_TranslateMessage(ProcessId,Porx);
-			}
-			else
-			{
-				free_mem(ProcessId, Hookparam, sizeof(HookMapdLLparam));
-				*HookAddressMemory = NULL;
+				// NOTE:g_HookCode用于恢复hook的hijack_func字节码后手动call hijack_func，最后执行的shellcode(注入)
+				write_mem(ProcessId, Porx, sizeof(g_HookCode), g_HookCode, nullptr, communicate::ERWTYPE::MmCopy);
+				if (hook_fix_proxy(ProcessId, Porx, Hookparam, sizeof(g_HookCode)))
+				{
+					*HookAddressMemory = Porx;
+					static UCHAR HookCode[] = {
+						0x48,0xb8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,		//mov rax,1111111111111111
+						0xff,0xe0												//jmp rax
+					};
+					*(PVOID*)&HookCode[2] = Porx;
+
+					//hook
+					ULONG old{};
+					if (protect_mem(ProcessId, hijack_func, 0x1000, PAGE_EXECUTE_READWRITE, &old))
+					{
+						write_mem(ProcessId, hijack_func, sizeof(HookCode), HookCode, NULL, communicate::ERWTYPE::MmCopy);
+					}
+				}
+				else
+				{
+					free_mem(ProcessId, Hookparam, sizeof(HookMapdLLparam));
+					*HookAddressMemory = NULL;
+				}
 			}
 		}
 		else
@@ -538,45 +613,37 @@ bool drv::run_hook(DWORD ProcessId, PVOID Address, Shellparam* param,PVOID64* Ho
 			free_mem(ProcessId,Porx, sizeof(g_HookCode));
 		}
 	}
+	else
+	{
+		DBG_LOG("alloc HookCode failed,err:%d", get_last_error());
+	}
 
 	return false;
 }
 
-HookMapdLLparam* drv::hook_params_alloc_memory(DWORD ProcessId, PVOID Address, Shellparam* param)
+HookMapdLLparam* drv::hook_params_alloc_memory(DWORD ProcessId, PVOID Address, Shellparam* param, PVOID hijackAddr)
 {
 	HookMapdLLparam* Parm = NULL;
-	PVOID TranslateMessageAddress = NULL;
-	HMODULE User32DllBabse = GetModuleHandleA("User32.dll");
-	if (!User32DllBabse)
-	{
-		User32DllBabse = LoadLibraryA("User32.dll");
-	}
-	printf("[=]User32DllBabse = %p\r\n", User32DllBabse);
-
-	if (User32DllBabse != NULL)
-	{
-		TranslateMessageAddress = GetProcAddress(User32DllBabse, "TranslateMessage");
-		printf("[+]TranslateMessageAddress = %p\r\n", TranslateMessageAddress);
-	}
-
-	if (TranslateMessageAddress != NULL)
+	if (hijackAddr != NULL)
 	{
 		Parm = NULL;
-		alloc_mem(ProcessId, NULL, sizeof(HookMapdLLparam), &Parm, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
-		if (Parm != NULL)
+		if (alloc_mem(ProcessId, NULL, sizeof(HookMapdLLparam), &Parm, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) &&
+			 Parm)
 		{
+			DBG_LOG("Param = %p", Parm);
 			HookMapdLLparam tempParam = {0};
-			tempParam.FuntionAddress = reinterpret_cast<ULONG64>(TranslateMessageAddress);
+			tempParam.FuntionAddress = reinterpret_cast<ULONG64>(hijackAddr);
 			tempParam.OrgCodeSize = 12;
 			tempParam.pramAddress = param;
 			tempParam.ShellCodeAddress = Address;
 			tempParam.OrgCode = NULL;
-			alloc_mem(ProcessId,NULL, static_cast<ULONG>(tempParam.OrgCodeSize), &tempParam.OrgCode, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
+			alloc_mem(ProcessId,NULL, static_cast<ULONG>(tempParam.OrgCodeSize), &tempParam.OrgCode, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
 			tempParam.nRet = false;
 			if (tempParam.OrgCode != NULL)
 			{
-				write_mem(ProcessId, tempParam.OrgCode, tempParam.OrgCodeSize, TranslateMessageAddress, ERWTYPE::MmCopy);
+				write_mem(ProcessId, tempParam.OrgCode, tempParam.OrgCodeSize, hijackAddr, NULL, communicate::ERWTYPE::MmCopy);
 				write<HookMapdLLparam>(ProcessId,Parm, tempParam);
+				DBG_LOG("write HookMapdLLparam done");
 				return Parm;
 			}
 		}
@@ -591,6 +658,7 @@ bool drv::hook_fix_proxy(DWORD ProcessId, PVOID Poxy, HookMapdLLparam* param, SI
 		ULONG64 P = read<ULONG64>(ProcessId,reinterpret_cast<PVOID>((ULONG64)Poxy + i));
 		if (P == 0x1122334455667788)
 		{
+			DBG_LOG("fix pos:%p", (ULONG64)Poxy + i);
 			write<ULONG64>(ProcessId,(PCHAR)Poxy + i, (ULONG64)param);
 			return TRUE;
 		}
@@ -598,40 +666,3 @@ bool drv::hook_fix_proxy(DWORD ProcessId, PVOID Poxy, HookMapdLLparam* param, SI
 	return FALSE;
 }
 
-bool drv::hook_TranslateMessage(DWORD ProcessId, PVOID Poxy)
-{
-	HMODULE User32DllBabse = GetModuleHandleA("User32.dll");
-	if (User32DllBabse != NULL)
-	{
-		PVOID TranslateMessageAddress = GetProcAddress(User32DllBabse, "TranslateMessage");
-		if (TranslateMessageAddress != NULL)
-		{
-			UCHAR HookCode[] = {
-				0x48,0xb8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,		//mov rax,1111111111111111
-				0xff,0xe0												//jmp rax
-			};
-			*(PVOID*)&HookCode[2] = (PVOID)Poxy;
-			//hook
-			ULONG old{};
-			if(protect_mem(ProcessId, TranslateMessageAddress,0x1000,PAGE_EXECUTE_READWRITE,&old))
-			{
-				write_mem(ProcessId, TranslateMessageAddress, sizeof(HookCode), HookCode, ERWTYPE::MmCopy);
-				protect_mem(ProcessId, TranslateMessageAddress, 0x1000, old);
-			}
-			
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-bool drv::close_handle(DWORD ProcessId, HANDLE handler)
-{
-	DataParams dp = { 0 };
-	dp.cmd = CMD_Close;
-	dp.pid = ProcessId;
-	dp.params.thread.handler = handler;
-
-	send_control(&dp);
-	return TRUE;
-}

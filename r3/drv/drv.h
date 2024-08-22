@@ -4,89 +4,12 @@
 #include <stdint.h>
 #include "dll_struct.h"
 
+#include "../../share/communicate.h"
+
+#define DBG_LOG(Format, ...) printf("[" __FUNCTION__ ":%u]: " Format "\n", __LINE__, ## __VA_ARGS__)
+
 class drv
 {
-public:
-
-	enum ERWTYPE : int
-	{
-		MmCopy = 0,
-		MDL,
-		PHYSICAL
-	};
-
-	typedef struct _DATA_PARAMENTS_ {
-
-		ULONG64 cmd;
-		ULONG64 pid;
-
-		union
-		{
-			struct
-			{
-				PVOID64 module_name;
-				PVOID64 module_base;
-				bool wow64;
-				DWORD32 module_size;
-				PVOID64 output;
-			}m;
-
-			struct
-			{
-				PVOID64 addr;
-				PVOID64 buffer;
-				ULONG64 length;
-				PVOID64 output;
-				ULONG proctect;
-				ULONG oldprotect;
-				ULONG64 alloctype;
-				ERWTYPE rw_type;
-				SIZE_T retByte;
-			}mem;
-
-			struct
-			{
-				PVOID entry;
-				PVOID params;
-				HANDLE handler;
-			}thread;
-
-			struct {
-				uint64_t vad_root;
-				uint64_t KeServiceDescriptorTable;
-				uint64_t data_base;
-			}symbs;
-
-			struct
-			{
-				uint32_t mx;
-				uint32_t my;
-				uint32_t keycode;
-				uint16_t flags;
-			}device;
-		}params;
-
-	}DataParams, * PDataParams;
-
-
-	enum ECMD
-	{
-		CMD_CONTROL = 1000,
-		CMD_GetProcessModules,
-		CMD_GetExportFunction,
-		CMD_ReadMemory,
-		CMD_WriteMemory,
-		CMD_AllocMemory,
-		CMD_FreeMemory,
-		CMD_QueryVirtualMemory,
-		CMD_ProtectVirtualMemory,
-		CMD_CreateThread,
-		CMD_Close,
-		CMD_KbdEvent,
-		CMD_MouseEvent,
-		CMD_Symbol
-	};
-
 public:
 	enum ERROR_CODE
 	{
@@ -100,6 +23,14 @@ public:
 	};
 
 public:
+	drv() {
+		drv(NULL, NULL);
+	}
+	drv(HANDLE h_file, int last_error)
+		: hFile_(h_file),
+		  lastError_(last_error)
+	{
+	}
 
 	ERROR_CODE init();
 
@@ -107,13 +38,13 @@ public:
 
 	bool get_export_address(DWORD ProcessId, PCWCH ModuleName, bool isWow64, PCCH FunctionName, PVOID64 Output);
 
-	bool read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, ERWTYPE type);
+	bool read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, PSIZE_T retBytes, communicate::ERWTYPE type);
 
-	bool write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer, ERWTYPE type);
+	bool write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer,PSIZE_T retBytes, communicate::ERWTYPE type);
 
 	bool alloc_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, PVOID64 Output, ULONG AllocationType, ULONG Protect);
 
-	bool protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newProtect,PULONG oldProtect = NULL);
+	bool protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newProtect,PULONG oldProtect = nullptr);
 
 	uint64_t allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULONG AllocationType, ULONG Protect);
 
@@ -121,7 +52,7 @@ public:
 
 	bool query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output);
 
-	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params);
+	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params, bool disable_notify,bool hide, PULONG tid);
 
 	bool mouse_event_ex(DWORD x, DWORD y, USHORT flag);
 
@@ -140,24 +71,31 @@ public:
 		return "unkown";
 	}
 
+	int get_last_error() const
+	{
+		return lastError_;
+	}
+
 	template<typename T>
-	T read(uint32_t pid,PVOID64 addr, ERWTYPE type = ERWTYPE::MmCopy)
+	T read(uint32_t pid,PVOID64 addr, communicate::ERWTYPE type = communicate::ERWTYPE::MmCopy)
 	{
 		T val{};
 
-		read_mem(pid,addr,sizeof(T),&val, type);
+		read_mem(pid,addr,sizeof(T),&val,nullptr, type);
 		return val;
 	}
 
 	template<typename T>
-	void write(uint32_t pid, PVOID64 addr,T val,ERWTYPE type = ERWTYPE::MmCopy)
+	void write(uint32_t pid, PVOID64 addr,T val, communicate::ERWTYPE type = communicate::ERWTYPE::MmCopy)
 	{
-		write_mem(pid, addr,sizeof(T),&val, type);
+		write_mem(pid, addr,sizeof(T),&val, nullptr,type);
 	}
 
 private:
 
 	HANDLE hFile_;
+
+	int lastError_;
 
 	std::map<ERROR_CODE, const char*> msg_ = {
 		{CODE_OK,"ok"},
@@ -168,7 +106,7 @@ private:
 		{CODE_GET_SYMBOLS_FAILED,"get symbols failed"},
 	};
 
-	void send_control(const PDataParams dp);
+	bool send_control(communicate::ECMD cmd,uint32_t pid = NULL,void* buffer = nullptr);
 
 #pragma region dll_inject
 
@@ -186,15 +124,11 @@ private:
 
 	bool fill_params(DWORD ProcessId,Shellparam* param, PVOID MemoryAddress, DWORD e_lfanew);
 
-	bool run_remote_hook(DWORD ProcessId, PVOID Address, Shellparam* param);
-
-	bool run_hook(DWORD ProcessId, PVOID Address, Shellparam* param, PVOID64* HookAddressMemory);
-
-	HookMapdLLparam* hook_params_alloc_memory(DWORD ProcessId, PVOID Address, Shellparam* param);
+	HookMapdLLparam* hook_params_alloc_memory(DWORD ProcessId, PVOID Address, Shellparam* param,PVOID hijackAddr);
 
 	bool hook_fix_proxy(DWORD ProcessId, PVOID Poxy, HookMapdLLparam* param, SIZE_T PoxySize);
 
-	bool hook_TranslateMessage(DWORD ProcessId, PVOID Poxy);
+	bool run_hook(DWORD ProcessId, PVOID Address, Shellparam* param, PVOID64* HookAddressMemory);
 
 #pragma endregion
 

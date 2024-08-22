@@ -68,33 +68,20 @@ void printf_hex(LPBYTE buffer,size_t len)
     }
 }
 
-void inject(uint32_t pid)
-{
-    FILE* f = NULL;
-    fopen_s(&f,"Dll1.dll", "rb+");
-    if (f)
-    {
-
-        fseek(f, 0, SEEK_END);
-        auto size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-
-        char* buffer = new char[size];
-        fread(buffer, 1, size, f);
-        fclose(f);
-
-        g_drv.inject(pid, buffer, size);
-        printf("inject ok!\n");
-    }
-    else
-    {
-        printf("open file failed!\n");
-    }
-}
-
 void thread1()
 {
-    printf("thread start\n");
+    while(1)
+    {
+        printf("thread start\n");
+        Sleep(3000);
+    }
+   
+}
+
+void thread2()
+{
+   printf("thread start");
+   Sleep(3000);
 }
 
 int main()
@@ -102,40 +89,21 @@ int main()
     drv::ERROR_CODE status_code = g_drv.init();
     if (status_code != drv::ERROR_CODE::CODE_OK)
     {
-        printf("error msg:%s\n", g_drv.get_error_msg(status_code));
+       DBG_LOG("error msg:%s,err:%d", g_drv.get_error_msg(status_code),g_drv.get_last_error());
         system("pause");
         return 0;
     }
 
-    printf("init ok\n");
+    DBG_LOG("init ok");
     getchar();
-    uint32_t pid = GetCurrentProcessId();
+    uint32_t pid = 0;
+
+    DBG_LOG("input test pid:");
+    scanf("%d",&pid);
 
 #pragma region 获取模块地址
     PVOID64 ntdllBase = g_drv.get_process_module(pid, L"ntdll.dll", false);
-    printf("ntdll base = %p\n", ntdllBase);
-#pragma endregion
-
-    printf("-----------------------------------------------------------\n");
-    getchar();
-
-#pragma region 读写内存
-    BYTE rwBytes[5]{};
-    PVOID64 handle = reinterpret_cast<PVOID64>(GetModuleHandleA(NULL));
-    printf("GetModuleHandleA(NULL) = %p\n", handle);
-	for(int i =0;i<3;i++)
-    {
-        g_drv.read_mem(pid, handle, sizeof(rwBytes), rwBytes, (drv::ERWTYPE)i);
-        printf("read_mem by type:%d\n",i);
-        printf_hex(rwBytes, sizeof(rwBytes));
-        rwBytes[0]++;
-        g_drv.write_mem(pid, handle, sizeof(rwBytes), rwBytes, (drv::ERWTYPE)i);
-        RtlZeroMemory(rwBytes, sizeof(rwBytes));
-        getchar();
-    }
-    g_drv.read_mem(pid, handle, sizeof(rwBytes), rwBytes, drv::ERWTYPE::MDL);
-    printf("read_mem\n");
-    printf_hex(rwBytes, sizeof(rwBytes));
+    DBG_LOG("ntdll base = %p", ntdllBase);
 #pragma endregion
 
     printf("-----------------------------------------------------------\n");
@@ -144,8 +112,29 @@ int main()
 #pragma region 申请内存
     uint64_t lpNewMem = 0;
     g_drv.alloc_mem(pid, NULL, 0x100, &lpNewMem, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    printf("alloc_mem = %p\n", lpNewMem);
+    DBG_LOG("alloc_mem = %p", lpNewMem);
 
+    g_drv.write<ULONG64>(pid,reinterpret_cast<PVOID64>(lpNewMem), 0x123456789);
+#pragma endregion
+
+    printf("-----------------------------------------------------------\n");
+    getchar();
+
+#pragma region 读写内存
+    BYTE rwBytes[5]{};
+	for(int i =0;i<3;i++)
+    {
+        g_drv.read_mem(pid, reinterpret_cast<PVOID64>(lpNewMem), sizeof(rwBytes), rwBytes, NULL,(communicate::ERWTYPE)i);
+        DBG_LOG("read_mem by type:%d",i);
+        printf_hex(rwBytes, sizeof(rwBytes));
+        rwBytes[0]++;
+        g_drv.write_mem(pid, reinterpret_cast<PVOID64>(lpNewMem), sizeof(rwBytes), rwBytes, NULL,(communicate::ERWTYPE)i);
+        RtlZeroMemory(rwBytes, sizeof(rwBytes));
+        getchar();
+    }
+    g_drv.read_mem(pid, reinterpret_cast<PVOID64>(lpNewMem), sizeof(rwBytes), rwBytes, NULL,communicate::ERWTYPE::Mdl);
+    DBG_LOG("read_mem");
+    printf_hex(rwBytes, sizeof(rwBytes));
 #pragma endregion
 
     printf("-----------------------------------------------------------\n");
@@ -155,22 +144,39 @@ int main()
     g_drv.protect_mem(pid, reinterpret_cast<PVOID64>(lpNewMem), sizeof(lpNewMem), PAGE_EXECUTE_READWRITE);
     MEMORY_BASIC_INFORMATION64 minfos{};
     g_drv.query_mem(pid, reinterpret_cast<PVOID64>(lpNewMem), &minfos);
-    printf("protect AllocationBase = %p\n", minfos.AllocationBase);
-    printf("protect AllocationProtect = %d\n", minfos.AllocationProtect);
-    printf("protect BaseAddress = %p\n", minfos.BaseAddress);
-    printf("protect Protect = %d\n", minfos.Protect);
-    printf("protect RegionSize = %x\n", minfos.RegionSize);
+    DBG_LOG("protect AllocationBase = %p", minfos.AllocationBase);
+    DBG_LOG("protect AllocationProtect = %d", minfos.AllocationProtect);
+    DBG_LOG("protect BaseAddress = %p", minfos.BaseAddress);
+    DBG_LOG("protect Protect = %d", minfos.Protect);
+    DBG_LOG("protect RegionSize = %x", minfos.RegionSize);
 #pragma endregion
 
     printf("-----------------------------------------------------------\n");
     getchar();
 
-    g_drv.close_handle(pid, g_drv.create_thread(pid, thread1, NULL));
+#pragma region 创建线程
+    ULONG tid{};
+    auto hThread = g_drv.create_thread(GetCurrentProcessId(), thread2, NULL, true,false,&tid);
+    g_drv.close_handle(pid, hThread);
+    DBG_LOG("create thread:%p,tdi:%d",hThread, tid);
+#pragma endregion
+
+    printf("-----------------------------------------------------------\n");
     getchar();
 
+#pragma region device_键鼠
     g_drv.mouse_event_ex(100, 100, MOUSE_MOVE_RELATIVE);
+#pragma endregion
 
-    bool inject = g_drv.inject(2084, hexData, sizeof(hexData));
-    printf("inject = %d\n", inject);
+    printf("-----------------------------------------------------------\n");
     getchar();
+
+#pragma region 注入DLL
+
+    // 一个弹窗dll
+	 bool inject = g_drv.inject(pid, hexData, sizeof(hexData));
+    DBG_LOG("inject = %d\n", inject);
+#pragma endregion
+
+    system("pause");
 }

@@ -192,6 +192,7 @@
     <ClCompile Include="module\module.cpp" />
     <ClCompile Include="process\process.cpp" />
     <ClCompile Include="ssdt\ssdt.cpp" />
+    <ClCompile Include="thread\thread.cpp" />
     <ClCompile Include="utils\utils.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -202,11 +203,13 @@
     <ClInclude Include="device\idevice.h" />
     <ClInclude Include="device\keybd.h" />
     <ClInclude Include="device\mouse.h" />
+    <ClInclude Include="log\log.hpp" />
     <ClInclude Include="memory\memory.h" />
     <ClInclude Include="module\module.h" />
     <ClInclude Include="process\process.h" />
     <ClInclude Include="ssdt\ssdt.h" />
     <ClInclude Include="symbols\symbols.hpp" />
+    <ClInclude Include="thread\thread.h" />
     <ClInclude Include="utils\utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -12,4 +12,19 @@ namespace memory
 
 	NTSTATUS write_physical_addr(IN PVOID64 address, IN PVOID64 buffer,IN SIZE_T size, OUT SIZE_T* BytesTransferred);
 
+	SIZE_T copy_mem_safe(PVOID dest, PVOID src, SIZE_T len);
+
+	template<typename T>
+	T read_safe(PVOID addr)
+	{
+		T val{};
+		copy_mem_safe(&val,addr,sizeof(T));
+		return val;
+	}
+
+	template<typename T>
+	void write_safe(PVOID addr,T val)
+	{
+		copy_mem_safe(addr, &val, sizeof(T));
+	}
 }
