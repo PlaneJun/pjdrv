@@ -24,21 +24,22 @@ public:
 
 public:
 	drv() {
-		drv(NULL, NULL);
+		drv(NULL);
 	}
-	drv(HANDLE h_file, int last_error)
-		: hFile_(h_file),
-		  lastError_(last_error)
+	drv(HANDLE h_file)
+		: hFile_(h_file)
 	{
 	}
 
 	ERROR_CODE init();
 
-	PVOID64 get_process_module(DWORD ProcessId, PCWCH ModuleName,bool isWow64);
+	PVOID64 get_process_module(DWORD ProcessId, PCWCH ModuleName,PSIZE_T size,bool isWow64);
 
 	bool get_export_address(DWORD ProcessId, PCWCH ModuleName, bool isWow64, PCCH FunctionName, PVOID64 Output);
 
 	bool read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, PSIZE_T retBytes, communicate::ERWTYPE type);
+
+	bool read_mem_safe(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, PSIZE_T retBytes, communicate::ERWTYPE type);
 
 	bool write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer,PSIZE_T retBytes, communicate::ERWTYPE type);
 
@@ -54,6 +55,8 @@ public:
 
 	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params, bool disable_notify,bool hide, PULONG tid);
 
+	NTSTATUS wait_single_object(DWORD ProcessId, HANDLE handle,bool alert,ULONG wait_time);
+
 	bool mouse_event_ex(DWORD x, DWORD y, USHORT flag);
 
 	bool keybd_event_ex(DWORD KeyCode, USHORT flag);
@@ -62,18 +65,15 @@ public:
 
 	bool close_handle(DWORD ProcessId,HANDLE handler);
 
-	bool dump_module(DWORD ProcessId, PCCH module_name, PCCH save_path);
+	bool dump_module(DWORD ProcessId, PCWCH module_name, PCCH save_path, bool isWow64);
+
+	bool dump_memory(DWORD ProcessId, PVOID64 memory_start, SIZE_T size ,PCCH save_path);
 
 	const char* get_error_msg(ERROR_CODE code)
 	{
 		if (msg_.count(code) > 0)
 			return  msg_[code];
 		return "unkown";
-	}
-
-	int get_last_error() const
-	{
-		return lastError_;
 	}
 
 	template<typename T>
@@ -95,8 +95,6 @@ private:
 
 	HANDLE hFile_;
 
-	int lastError_;
-
 	std::map<ERROR_CODE, const char*> msg_ = {
 		{CODE_OK,"ok"},
 		{CODE_DEVICE_FAILED,"open device failed"},
@@ -106,7 +104,7 @@ private:
 		{CODE_GET_SYMBOLS_FAILED,"get symbols failed"},
 	};
 
-	bool send_control(communicate::ECMD cmd,uint32_t pid = NULL,void* buffer = nullptr);
+	NTSTATUS send_control(communicate::ECMD cmd,uint32_t pid = NULL,void* buffer = nullptr);
 
 #pragma region dll_inject
 

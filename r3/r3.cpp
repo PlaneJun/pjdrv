@@ -89,7 +89,7 @@ int main()
     drv::ERROR_CODE status_code = g_drv.init();
     if (status_code != drv::ERROR_CODE::CODE_OK)
     {
-       DBG_LOG("error msg:%s,err:%d", g_drv.get_error_msg(status_code),g_drv.get_last_error());
+       DBG_LOG("error msg:%s", g_drv.get_error_msg(status_code));
         system("pause");
         return 0;
     }
@@ -102,7 +102,7 @@ int main()
     scanf("%d",&pid);
 
 #pragma region 获取模块地址
-    PVOID64 ntdllBase = g_drv.get_process_module(pid, L"ntdll.dll", false);
+    PVOID64 ntdllBase = g_drv.get_process_module(pid, L"ntdll.dll",nullptr, false);
     DBG_LOG("ntdll base = %p", ntdllBase);
 #pragma endregion
 

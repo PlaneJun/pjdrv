@@ -1,10 +1,12 @@
 #include "drv.h"
+
 #include <string>
 #include "../pdb/Pdb.h"
 #include "dll_shellcode.h"
 
+#define NT_SUCCESS(status) status >= 0
 
-bool drv::send_control(communicate::ECMD cmd, uint32_t pid, void* buffer)
+NTSTATUS drv::send_control(communicate::ECMD cmd, uint32_t pid, void* buffer)
 {
 	communicate::Params dp{};
 	dp.cmd = cmd;
@@ -21,13 +23,7 @@ bool drv::send_control(communicate::ECMD cmd, uint32_t pid, void* buffer)
 	DeviceIoControl(hFile_, IOCTL_NEITHER, &dp, sizeof(communicate::Params), NULL, NULL, NULL, NULL);
 #endif
 
-	// ´íÎóÊ±¼ÇÂ¼Ê§°ÜÂë
-	if(dp.status != 0)
-	{
-		lastError_ = dp.status;
-	}
-
-	return dp.status == 0;
+	return dp.status;
 }
 
 drv::ERROR_CODE drv::init()
@@ -123,24 +119,31 @@ drv::ERROR_CODE drv::init()
 	return status_code;
 }
 
-PVOID64 drv::get_process_module(DWORD ProcessId,PCWCH ModuleName, bool isWow64)
+PVOID64 drv::get_process_module(DWORD ProcessId,PCWCH ModuleName,PSIZE_T size, bool isWow64)
 {
 	communicate::Module buffer = { 0 };
 	buffer.module_name = (void*)(ModuleName);
-	send_control(communicate::ECMD::CMD_R3_GetProcessModules,ProcessId,&buffer);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_GetProcessModules,ProcessId,&buffer);
+	if(NT_SUCCESS(status))
+	{
+		if (size != nullptr)
+		{
+			*size = buffer.module_size;
+		}
+	}
 	return buffer.output;
 }
 
 bool drv::get_export_address(DWORD ProcessId, PCWCH ModuleName , bool isWow64,PCCH FunctionName, PVOID64 Output)
 {
-	PVOID64 ModuleBase = get_process_module(ProcessId,  ModuleName, isWow64);
+	PVOID64 ModuleBase = get_process_module(ProcessId,  ModuleName,nullptr, isWow64);
 	if (ModuleBase)
 	{
 		communicate::Module module{};
 		module.module_base = ModuleBase;
 		module.module_name = (PVOID64)FunctionName;
 		module.output = Output;
-		return send_control(communicate::ECMD::CMD_R3_GetExportFunction, ProcessId, &module);
+		return NT_SUCCESS(send_control(communicate::ECMD::CMD_R3_GetExportFunction, ProcessId, &module));
 	}
 	return FALSE;
 }
@@ -152,9 +155,9 @@ bool drv::read_mem(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Out
 	mem.length = ReadSize;
 	mem.output = Output;
 	mem.rw_type = type;
-	bool status = send_control(communicate::ECMD::CMD_R3_ReadMemory,ProcessId,&mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_ReadMemory,ProcessId,&mem);
 	if (retBytes) *retBytes = mem.ret_bytes;
-	return status;
+	return NT_SUCCESS(status);
 }
 bool drv::write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 WriteBuffer, PSIZE_T retBytes, communicate::ERWTYPE type)
 {
@@ -163,9 +166,9 @@ bool drv::write_mem(DWORD ProcessId, PVOID64 Address, ULONG WriteSize, PVOID64 W
 	mem.length = WriteSize;
 	mem.buffer = WriteBuffer;
 	mem.rw_type = type;
-	bool status = send_control(communicate::ECMD::CMD_R3_WriteMemory,ProcessId,&mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_WriteMemory,ProcessId,&mem);
 	if (retBytes) *retBytes = mem.ret_bytes;
-	return status;
+	return NT_SUCCESS(status);
 }
 
 bool drv::alloc_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, PVOID64 Output, ULONG AllocationType, ULONG Protect)
@@ -176,7 +179,8 @@ bool drv::alloc_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, PVOID64 Output
 	mem.output = Output;
 	mem.alloctype = AllocationType;
 	mem.proctect = Protect;
-	return send_control(communicate::ECMD::CMD_R3_AllocMemory, ProcessId, &mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_AllocMemory, ProcessId, &mem);
+	return NT_SUCCESS(status);
 }
 
 uint64_t drv::allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULONG AllocationType, ULONG Protect)
@@ -189,7 +193,8 @@ uint64_t drv::allc_mem_nearby(DWORD ProcessId, ULONG64 Address, ULONG Size, ULON
 
 	do
 	{
-		if(alloc_mem(ProcessId, reinterpret_cast<PVOID64>(AllocPtr), Size, &AllocBase, AllocationType, Protect))
+		NTSTATUS status = alloc_mem(ProcessId, reinterpret_cast<PVOID64>(AllocPtr), Size, &AllocBase, AllocationType, Protect);
+		if(NT_SUCCESS(status))
 		{
 			if (AllocBase == 0)
 			{
@@ -234,26 +239,28 @@ bool drv::protect_mem(DWORD ProcessId, PVOID64 Address, ULONG Size, ULONG newPro
 	mem.addr = Address;
 	mem.length = Size;
 	mem.proctect = newProtect;
-	bool status = send_control(communicate::ECMD::CMD_R3_ProtectVirtualMemory,ProcessId,&mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_ProtectVirtualMemory,ProcessId,&mem);
 	if(oldProtect != NULL)
 	{
 		*oldProtect = mem.oldprotect;
 	}
-	return status;
+	return NT_SUCCESS(status);
 }
 bool drv::free_mem(DWORD ProcessId, PVOID64 Address, ULONG Size)
 {
 	communicate::Memory mem{};
 	mem.addr = Address;
 	mem.length = Size;
-	return send_control(communicate::ECMD::CMD_R3_FreeMemory, ProcessId, &mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_FreeMemory, ProcessId, &mem);
+	return NT_SUCCESS(status);
 }
 bool drv::query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output)
 {
 	communicate::Memory mem{};
 	mem.addr = Address;
 	mem.output = Output;
-	return send_control(communicate::ECMD::CMD_R3_QueryVirtualMemory, ProcessId, &mem);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_QueryVirtualMemory, ProcessId, &mem);
+	return NT_SUCCESS(status);
 }
 
 HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool disable_notify,bool hide, PULONG tid)
@@ -265,15 +272,26 @@ HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool disabl
 	thread.params = params;
 	thread.disable_notify = disable_notify;
 	thread.hide = hide;
-	if(send_control(communicate::ECMD::CMD_R3_CreateThread, ProcessId, &thread))
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_CreateThread, ProcessId, &thread);
+	if(NT_SUCCESS(status))
 	{
-		DBG_LOG("threadid = %x", thread.threadid);
-		if(tid != NULL)
+		if(tid != nullptr)
 		{
 			*tid = thread.threadid;
 		}
 	}
 	return thread.handler;
+}
+
+NTSTATUS drv::wait_single_object(DWORD ProcessId, HANDLE handle, bool alert, ULONG wait_time)
+{
+	HANDLE retHandle = NULL;
+	communicate::Thread thread{};
+	thread.handler = &retHandle;
+	thread.wait_time = wait_time;
+	thread.alert = alert;
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_WaitSingleObject, ProcessId, &thread);
+	return status;
 }
 
 bool drv::mouse_event_ex(DWORD x, DWORD y, USHORT flag)
@@ -282,29 +300,107 @@ bool drv::mouse_event_ex(DWORD x, DWORD y, USHORT flag)
 	device.mx = x;
 	device.my = y;
 	device.flags = flag;
-	return send_control(communicate::ECMD::CMD_R3_MouseEvent, 0, &device);
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_MouseEvent, 0, &device);
+	return NT_SUCCESS(status);
 }
 bool drv::keybd_event_ex(DWORD KeyCode, USHORT flag)
 {
 	communicate::Device device{};
 	device.keycode = KeyCode;
 	device.flags = flag;
-	return send_control(communicate::CMD_R3_KbdEvent, 0, &device);
+	NTSTATUS status = send_control(communicate::CMD_R3_KbdEvent, 0, &device);
+	return NT_SUCCESS(status);
 }
 
 bool drv::close_handle(DWORD ProcessId, HANDLE handler)
 {
 	communicate::Thread thread{};
 	thread.handler = handler;
-	send_control(communicate::ECMD::CMD_R3_CloseHandle, ProcessId, &thread);
-	return TRUE;
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_CloseHandle, ProcessId, &thread);
+	return NT_SUCCESS(status);
 }
 
-
-bool drv::dump_module(DWORD ProcessId, PCCH module_name, PCCH save_path)
+bool drv::read_mem_safe(DWORD ProcessId, PVOID64 Address, ULONG ReadSize, PVOID64 Output, PSIZE_T retBytes, communicate::ERWTYPE type)
 {
+	ULONG readBytes = NULL;
+	ULONG bytesToRead = NULL;
+	uint64_t next_ptr = reinterpret_cast<uint64_t>(Address);
+	do
+	{
+		MEMORY_BASIC_INFORMATION64 minfos{};
+		if (!query_mem(ProcessId, Address, &minfos))
+		{
+			break;
+		}
 
-	return TRUE;
+		bytesToRead = minfos.RegionSize;
+		if ((readBytes + bytesToRead) > ReadSize)
+		{
+			bytesToRead = ReadSize - readBytes;
+		}
+
+		if (minfos.State == MEM_COMMIT)
+		{
+			if (!read_mem(ProcessId, reinterpret_cast<PVOID64>(next_ptr), bytesToRead, static_cast<PUCHAR>(Output) + readBytes, nullptr, type))
+			{
+				break;
+			}
+		}
+		else
+		{
+			ZeroMemory(static_cast<PUCHAR>(Output) + readBytes, bytesToRead);
+		}
+
+		readBytes += bytesToRead;
+		next_ptr += minfos.RegionSize;
+
+	} while (readBytes < ReadSize);
+
+	if (readBytes == ReadSize)
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+bool drv::dump_module(DWORD ProcessId, PCWCH module_name, PCCH save_path,bool isWow64)
+{
+	SIZE_T module_size = NULL;
+	PVOID moudule_base = get_process_module(ProcessId, module_name,&module_size,isWow64);
+	if(!moudule_base)
+	{
+		return FALSE;
+	}
+	std::vector<uint8_t> module_data(module_size);
+	RtlZeroMemory(module_data.data(),module_size);
+
+	if(read_mem_safe(ProcessId, moudule_base, module_size, module_data.data(),nullptr,communicate::MmCopy))
+	{
+		FILE* file = nullptr;
+		fopen_s(&file, save_path, "wb+");
+		if (!file) return FALSE;
+		fwrite(module_data.data(), 1, module_data.size(), file);
+		fclose(file);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+bool drv::dump_memory(DWORD ProcessId, PVOID64 memory_start, SIZE_T size, PCCH save_path)
+{
+	std::vector<uint8_t> mem_data(size);
+	RtlZeroMemory(mem_data.data(), size);
+	if (read_mem_safe(ProcessId, memory_start, size, mem_data.data(), nullptr, communicate::MmCopy))
+	{
+		FILE* file = nullptr;
+		fopen_s(&file, save_path, "wb+");
+		if (!file) return FALSE;
+		fwrite(mem_data.data(), 1, mem_data.size(), file);
+		fclose(file);
+		return TRUE;
+	}
+	return FALSE;
 }
 
 bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
@@ -331,7 +427,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	if (!alloc_mem(ProcessId, nullptr, uSize, &pMemoryAddress, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) && 
 		 !pMemoryAddress)
 	{
-		DBG_LOG("alloc pMemoryAddress failed,err = %x",get_last_error());
+		DBG_LOG("alloc pMemoryAddress failed");
 		return false;
 	}
 	DBG_LOG("alloc pMemoryAddress = %p", pMemoryAddress);
@@ -348,7 +444,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	if(!alloc_mem(ProcessId, NULL, sizeof(Shellparam), &param, MEM_COMMIT |  MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) && 
 		!param)
 	{
-		DBG_LOG("alloc Shellparam failed,err = %x", get_last_error());
+		DBG_LOG("alloc Shellparam failed,err = %x");
 		return false;
 	}
 	DBG_LOG("Shellparam = %p", param);
@@ -359,13 +455,13 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 	if(!alloc_mem(ProcessId, NULL, sizeof(g_ShellCodeExDll), &ShllCodeMeory, MEM_COMMIT | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE) &&
 		!ShllCodeMeory)
 	{
-		DBG_LOG("alloc ShllCodeMeory failed,err = %x", get_last_error());
+		DBG_LOG("alloc ShllCodeMeory failed,err = %x");
 		return false;
 	}
 	DBG_LOG("ShllCodeMeory = %p", ShllCodeMeory);
 	if(!write_mem(ProcessId,ShllCodeMeory, sizeof(g_ShellCodeExDll),g_ShellCodeExDll, NULL,communicate::ERWTYPE::MmCopy))
 	{
-		DBG_LOG("write ShellCodeExDll failed,err = %x", get_last_error());
+		DBG_LOG("write ShellCodeExDll failed,err = %x");
 		return false;
 	}
 
@@ -393,7 +489,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 			}
 			else
 			{
-				DBG_LOG("free Shellparam failed,err = %x", get_last_error());
+				DBG_LOG("free Shellparam failed,err = %x");
 			}
 		}
 
@@ -405,7 +501,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 			}
 			else
 			{
-				DBG_LOG("free ShllCodeMeory failed,err = %x", get_last_error());
+				DBG_LOG("free ShllCodeMeory failed,err = %x");
 			}
 		}
 
@@ -417,7 +513,7 @@ bool drv::inject(DWORD ProcessId, PVOID64 dll_data, DWORD dll_size)
 			}
 			else
 			{
-				DBG_LOG("free pHookAddressMemory failed,err = %x", get_last_error());
+				DBG_LOG("free pHookAddressMemory failed,err = %x");
 			}
 		}
 
@@ -615,7 +711,7 @@ bool drv::run_hook(DWORD ProcessId, PVOID Address, Shellparam* param,PVOID64* Ho
 	}
 	else
 	{
-		DBG_LOG("alloc HookCode failed,err:%d", get_last_error());
+		DBG_LOG("alloc HookCode failed,err:%d");
 	}
 
 	return false;

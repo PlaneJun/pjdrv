@@ -257,6 +257,12 @@ void IoDispatch(communicate::PParams pdata)
 											  &p_thread->threadid);
 				break;
 			}
+			case communicate::ECMD::CMD_R3_WaitSingleObject:
+			{
+				communicate::PThread p_thread = static_cast<decltype(p_thread)>(pdata->buffer);
+				status = process::wait_single_object(reinterpret_cast<HANDLE>(pdata->pid), p_thread->handler, p_thread->alert, p_thread->wait_time);
+
+			}
 			case communicate::ECMD::CMD_R3_CloseHandle:
 			{
 				communicate::PThread p_thread = static_cast<decltype(p_thread)>(pdata->buffer);
@@ -295,8 +301,7 @@ void IoDispatch(communicate::PParams pdata)
 				break;
 			}
 		}
-	}
-	while (false);
+	} while (false);
 
 	pdata->status = status;
 }
@@ -312,8 +317,8 @@ void Control::install(PDRIVER_OBJECT pDrv)
 	}
 
 	//alloc memmory
-	PHYSICAL_ADDRESS lowRange = {0};
-	PHYSICAL_ADDRESS hightRange = {-1};
+	PHYSICAL_ADDRESS lowRange = { 0 };
+	PHYSICAL_ADDRESS hightRange = { -1 };
 	PULONG_PTR lpMem = nullptr;
 	for (int i = 0; i < 10; i++)
 	{
@@ -362,7 +367,7 @@ void Control::install(PDRIVER_OBJECT pDrv)
 	NTSTATUS status = IoCreateDevice(pDrv, 0, &g_undevice_name, FILE_DEVICE_UNKNOWN, 0, 0, &g_device);
 	if (!NT_SUCCESS(status))
 	{
-		DBG_LOG("create virtual device failed,err:%x",status);
+		DBG_LOG("create virtual device failed,err:%x", status);
 		return;
 	}
 	status = IoCreateSymbolicLink(&g_unsymlink_name, &g_undevice_name);
@@ -391,7 +396,7 @@ void Control::uninstall()
 {
 #ifdef IO_ahcache
 
-	if(g_AslLogPfnVPrintf)
+	if (g_AslLogPfnVPrintf)
 	{
 		PHYSICAL_ADDRESS tmp = MmGetPhysicalAddress(g_AslLogPfnVPrintf);
 		auto map = static_cast<PULONG_PTR>(MmMapIoSpace(tmp, 8, MmNonCached));

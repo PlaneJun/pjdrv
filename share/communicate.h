@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // IO_ahcache表示使用劫持的.rdata ptr进行通讯,否则自创建设备通讯
 // #define IO_ahcache
@@ -34,15 +34,15 @@ namespace communicate
 		CMD_R3_ProtectVirtualMemory,
 		CMD_R3_CreateThread,
 		CMD_R3_CloseHandle,
-		CMD_R3_WaitSingleObject,		// TODO
+		CMD_R3_WaitSingleObject,		
 		CMD_R3_KbdEvent,
 		CMD_R3_MouseEvent,
 		cmd_R3_HideThread,				// TODO
 		CMD_R3_HideProcess,				// TODO
-		CMD_R3_ResumeThread,				// TODO
+		CMD_R3_ResumeThread,			// TODO
 		CMD_R3_ResumeProcess,			// TODO
 		CMD_R3_ProtectProcess,			// TODO
-		CMD_R3_ProtectWindowm			// TODO
+		CMD_R3_ProtectWindowm,			// TODO
 		CMD_Symbol
 	};
 
@@ -90,6 +90,8 @@ namespace communicate
 		unsigned long threadid;
 		bool disable_notify;
 		bool hide;
+		bool alert;
+		unsigned int wait_time;
 	}Thread,*PThread;
 
 	typedef struct _TSYMBOLS

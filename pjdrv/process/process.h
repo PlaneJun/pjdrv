@@ -66,4 +66,6 @@ public:
 	static NTSTATUS create_thread(const HANDLE ProcessId, PVOID entry, PVOID params, bool disable_notify, bool hide, _Out_ PHANDLE handler, _Out_ PULONG tid);
 
 	static NTSTATUS close_handle(const HANDLE ProcessId, HANDLE handler);
+
+	static NTSTATUS wait_single_object(const HANDLE ProcessId, HANDLE handler,bool alert,unsigned int wait_time);
 };

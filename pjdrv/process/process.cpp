@@ -604,3 +604,27 @@ NTSTATUS process::close_handle(const HANDLE ProcessId, HANDLE handler)
 	ObDereferenceObject(pEProcess);
 	return status;
 }
+
+NTSTATUS process::wait_single_object(const HANDLE ProcessId, HANDLE handler, bool alert, unsigned int wait_time)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PEPROCESS pEProcess = nullptr;
+	if (!get_eprocess(ProcessId, &pEProcess))
+	{
+		return status;
+	}
+
+	LARGE_INTEGER interval{};
+	if(wait_time > 0)
+	{
+		// 3s = -10 * 1000 * 3000
+		interval.QuadPart = -10 * 1000 * wait_time;
+	}
+	BOOLEAN alert_ = alert;
+	KAPC_STATE apc_state{};
+	KeStackAttachProcess(pEProcess, &apc_state);
+	status = ZwWaitForSingleObject(handler, alert_, interval.QuadPart > 0? &interval : nullptr);
+	KeUnstackDetachProcess(&apc_state);
+	ObDereferenceObject(pEProcess);
+	return status;
+}
