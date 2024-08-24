@@ -8,6 +8,7 @@
 
 #define DBG_LOG(Format, ...) printf("[" __FUNCTION__ ":%u]: " Format "\n", __LINE__, ## __VA_ARGS__)
 
+#define NT_SUCCESS(status) status >= 0
 class drv
 {
 public:
@@ -53,9 +54,11 @@ public:
 
 	bool query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output);
 
-	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params, bool disable_notify,bool hide, PULONG tid);
+	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool hide, PHANDLE tid);
 
 	NTSTATUS wait_single_object(DWORD ProcessId, HANDLE handle,bool alert,ULONG wait_time);
+
+	NTSTATUS hide_thread(DWORD ProcessId, HANDLE tid, bool hide);
 
 	bool mouse_event_ex(DWORD x, DWORD y, USHORT flag);
 

@@ -37,10 +37,8 @@ namespace communicate
 		CMD_R3_WaitSingleObject,		
 		CMD_R3_KbdEvent,
 		CMD_R3_MouseEvent,
-		cmd_R3_HideThread,				// TODO
-		CMD_R3_HideProcess,				// TODO
-		CMD_R3_ResumeThread,			// TODO
-		CMD_R3_ResumeProcess,			// TODO
+		cmd_R3_HideThread,				// hide/show thread
+		CMD_R3_HideProcess,				// hide/show process
 		CMD_R3_ProtectProcess,			// TODO
 		CMD_R3_ProtectWindowm,			// TODO
 		CMD_Symbol
@@ -87,8 +85,7 @@ namespace communicate
 		void* entry;
 		void* params;
 		void* handler;
-		unsigned long threadid;
-		bool disable_notify;
+		HANDLE threadid;
 		bool hide;
 		bool alert;
 		unsigned int wait_time;

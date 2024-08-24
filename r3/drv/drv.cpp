@@ -4,7 +4,7 @@
 #include "../pdb/Pdb.h"
 #include "dll_shellcode.h"
 
-#define NT_SUCCESS(status) status >= 0
+
 
 NTSTATUS drv::send_control(communicate::ECMD cmd, uint32_t pid, void* buffer)
 {
@@ -263,14 +263,13 @@ bool drv::query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output)
 	return NT_SUCCESS(status);
 }
 
-HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool disable_notify,bool hide, PULONG tid)
+HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool hide, PHANDLE tid)
 {
 	HANDLE retHandle = NULL;
 	communicate::Thread thread{};
 	thread.handler = &retHandle;
 	thread.entry= entry;
 	thread.params = params;
-	thread.disable_notify = disable_notify;
 	thread.hide = hide;
 	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_CreateThread, ProcessId, &thread);
 	if(NT_SUCCESS(status))
@@ -291,6 +290,15 @@ NTSTATUS drv::wait_single_object(DWORD ProcessId, HANDLE handle, bool alert, ULO
 	thread.wait_time = wait_time;
 	thread.alert = alert;
 	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_WaitSingleObject, ProcessId, &thread);
+	return status;
+}
+
+NTSTATUS drv::hide_thread(DWORD ProcessId, HANDLE tid, bool hide)
+{
+	communicate::Thread thread{};
+	thread.threadid = tid;
+	thread.hide = hide;
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_HideProcess, ProcessId, &thread);
 	return status;
 }
 

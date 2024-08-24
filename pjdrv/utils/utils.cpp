@@ -6,10 +6,31 @@
 #include "../module/module.h"
 #include "../symbols/symbols.hpp"
 #include "../memory/memory.h"
+#include "../thread/thread.h"
+#include "../process/process.h"
 #include "../log/log.hpp"
 
 // 记录所有断链的节点
-std::map<PLIST_ENTRY, std::vector<PLIST_ENTRY>> g_unlinks{};
+struct Custom_LinkValue
+{
+	HANDLE id;
+
+	// 1、当node被作为key时，等于对应id的链表头
+	// 2、当node被作为value时，等于对应id被断链的节点
+	PLIST_ENTRY node;	
+};
+
+struct Custom_LinkKey
+{
+	utils::ELIST_TYPE type;
+	Custom_LinkValue info;
+
+	bool operator<(const Custom_LinkKey& other) const {
+		return info.id < other.info.id;
+	}
+};
+
+std::map<Custom_LinkKey, std::vector<Custom_LinkValue>> g_unlinks{};
 
 typedef struct _HANDLE_TABLE* PHANDLE_TABLE;
 typedef struct HANDLE_TABLE_ENTRY* PHANDLE_TABLE_ENTRY;
@@ -109,44 +130,106 @@ NTSTATUS utils::remove_handle_from_table(HANDLE handle)
 	return status;
 }
 
-void utils::unlink(PLIST_ENTRY entryList, PLIST_ENTRY node)
+NTSTATUS utils::unlink(PLIST_ENTRY entryList, PLIST_ENTRY node, ELIST_TYPE type)
 {
-	if (!MmIsAddressValid(node) || !MmIsAddressValid(node))
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	do
 	{
-		return;
-	}
-
-	RemoveEntryList(node);
-	if (g_unlinks.count(entryList) == 0)
-	{
-		g_unlinks[entryList] = {};
-	}
-	g_unlinks[entryList].push_back(node);
-}
-
-void utils::link(PLIST_ENTRY entryList, PLIST_ENTRY node)
-{
-	if (!MmIsAddressValid(node))
-	{
-		return;
-	}
-
-	InsertTailList(entryList, node);
-
-	// 删除记录中的节点
-	if (g_unlinks.count(entryList) > 0)
-	{
-		// 找对应节点
-		int i = 0;
-		for (i = 0; i < g_unlinks[entryList].size(); i++)
+		if (!MmIsAddressValid(entryList) || !MmIsAddressValid(node))
 		{
-			if (g_unlinks[entryList][i] == node)
+			break;
+		}
+
+		Custom_LinkKey key{};
+		key.type = type;
+		key.info.node = entryList;
+		if (type == Process)
+		{
+			HANDLE pid{};
+			if (NT_SUCCESS(process::get_UniqueProcessId(reinterpret_cast<PEPROCESS>(
+				reinterpret_cast<PUCHAR>(entryList) - symbols::data_.eprocess.UniqueProcessId), &pid)))
 			{
-				g_unlinks[entryList].erase(g_unlinks[entryList].begin() + i);
+				key.info.id = pid;
+			}
+			else
+			{
 				break;
 			}
 		}
+		else if (type == Thread)
+		{
+			CLIENT_ID cid{};
+			if (NT_SUCCESS(thread::get_Cid(reinterpret_cast<PETHREAD>(
+				reinterpret_cast<PUCHAR>(entryList) - symbols::data_.ethread.ThreadListEntry), &cid)))
+			{
+				key.info.id = cid.UniqueThread;
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		// insert
+		if (g_unlinks.count(key) == 0)
+		{
+			g_unlinks[key] = {};
+		}
+
+		Custom_LinkValue info{};
+		info.node = node;
+		g_unlinks[key].push_back(info);
+		RemoveEntryList(node);
+		status = STATUS_SUCCESS;
 	}
+	while (false);
+	return status;
+}
+
+NTSTATUS utils::link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	if (!MmIsAddressValid(entryList))
+	{
+		return status;
+	}
+
+	// 要恢复的节点
+	PLIST_ENTRY node = nullptr;
+	for(auto& k : g_unlinks)
+	{
+		// 确保链表头来源与参数一致
+		if(k.first.info.node == entryList && k.first.type == type)
+		{
+			// 查找对应handle的节点
+			int i=0;
+			for(i = 0; i < k.second.size(); i++)
+			{
+				if(k.second[i].id == id)
+				{
+					node = k.second[i].node;
+					break;
+				}
+			}
+
+			if(node)
+			{
+				// 如果找到,则删除该节点
+				k.second.erase(k.second.begin() + i);
+
+				// 当前节点为空则释放父节点
+				if(k.second.empty())
+					g_unlinks.erase(k.first);
+
+				// 恢复
+				InsertTailList(entryList, node);
+				status = STATUS_SUCCESS;
+				return status;
+			}
+		}
+	}
+
+	return status;
 }
 
 
@@ -157,7 +240,7 @@ void utils::resume_all_unlink()
 	{
 		for (const auto& n : t.second)
 		{
-			link(t.first, n);
+			link(t.first.info.node, n.id,t.first.type);
 		}
 	}
 	g_unlinks.clear();

@@ -251,7 +251,6 @@ void IoDispatch(communicate::PParams pdata)
 				status = process::create_thread(reinterpret_cast<HANDLE>(pdata->pid),
 											  p_thread->entry,
 											  p_thread->params,
-											  p_thread->disable_notify,
 											  p_thread->hide,
 											  &p_thread->handler,
 											  &p_thread->threadid);
@@ -267,6 +266,12 @@ void IoDispatch(communicate::PParams pdata)
 			{
 				communicate::PThread p_thread = static_cast<decltype(p_thread)>(pdata->buffer);
 				status = process::close_handle(reinterpret_cast<HANDLE>(pdata->pid), p_thread->handler);
+				break;
+			}
+			case communicate::ECMD::cmd_R3_HideThread:
+			{
+				communicate::PThread p_thread = static_cast<decltype(p_thread)>(pdata->buffer);
+				status = process::hide_thread_by_id(reinterpret_cast<HANDLE>(pdata->pid),p_thread->threadid,p_thread->hide);
 				break;
 			}
 			case communicate::ECMD::CMD_R3_KbdEvent:

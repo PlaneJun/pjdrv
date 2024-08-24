@@ -2,38 +2,19 @@
 #include <ntifs.h>
 #include "../symbols/symbols.hpp"
 #include "../memory/memory.h"
+#include "../macro_defs.h"
 
 class process
 {
-	#define MACRO_GET_MEMBER(type,member) NTSTATUS get_##member##(const PEPROCESS eprocess,  ##type##* out) \
-	{ \
-		NTSTATUS status = STATUS_UNSUCCESSFUL; \
-		if (!MmIsAddressValid(eprocess)) { return status;} \
-		if (symbols::data_.eprocess.##member## == NULL)  { return status;} \
-		*out = memory::read_safe<##type>(reinterpret_cast<PUCHAR>(eprocess) + symbols::data_.eprocess.##member##); \
-		status = STATUS_SUCCESS; \
-		return status; \
-	}
-
-#define MACRO_GET_PTR(type,member) NTSTATUS get_##member##(const PEPROCESS eprocess,  ##type##* out) \
-	{ \
-		NTSTATUS status = STATUS_UNSUCCESSFUL; \
-		if (!MmIsAddressValid(eprocess)) { return status;} \
-		if (symbols::data_.eprocess.##member## == NULL)  { return status;} \
-		*out = reinterpret_cast<##type>(reinterpret_cast<PUCHAR>(eprocess) + symbols::data_.eprocess.##member##); \
-		status = STATUS_SUCCESS; \
-		return status; \
-	}
-
 public:
 
-	static MACRO_GET_MEMBER(UINT64, DirectoryTableBase)
+	static MACRO_GET_MEMBER(UINT64, symbols::data_.eprocess,DirectoryTableBase)
 
-	static MACRO_GET_PTR(PLIST_ENTRY, ThreadListHead)
+	static MACRO_GET_PTR(PLIST_ENTRY, symbols::data_.eprocess, ThreadListHead)
 
-	static MACRO_GET_PTR(PLIST_ENTRY, ActiveProcessLinks)
+	static MACRO_GET_PTR(PLIST_ENTRY, symbols::data_.eprocess, ActiveProcessLinks)
 
-	static MACRO_GET_MEMBER(HANDLE, UniqueProcessId)
+	static MACRO_GET_MEMBER(HANDLE, symbols::data_.eprocess, UniqueProcessId)
 
 	static bool get_eprocess(const HANDLE ProcessId, PEPROCESS* pEProcess);
 
@@ -63,9 +44,11 @@ public:
 
 	static NTSTATUS protect_vmem(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection);
 
-	static NTSTATUS create_thread(const HANDLE ProcessId, PVOID entry, PVOID params, bool disable_notify, bool hide, _Out_ PHANDLE handler, _Out_ PULONG tid);
+	static NTSTATUS create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool hide, _Out_ PHANDLE handler, _Out_ PHANDLE tid);
 
 	static NTSTATUS close_handle(const HANDLE ProcessId, HANDLE handler);
 
-	static NTSTATUS wait_single_object(const HANDLE ProcessId, HANDLE handler,bool alert,unsigned int wait_time);
+	static NTSTATUS wait_single_object(const HANDLE ProcessId, HANDLE handle,bool alert,unsigned int wait_time);
+
+	static NTSTATUS hide_thread_by_id(const HANDLE ProcessId, HANDLE tid,bool hide);
 };

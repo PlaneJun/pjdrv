@@ -155,10 +155,26 @@ int main()
     getchar();
 
 #pragma region 创建线程
-    ULONG tid{};
-    auto hThread = g_drv.create_thread(GetCurrentProcessId(), thread2, NULL, true,false,&tid);
+    HANDLE tid{};
+    auto hThread = g_drv.create_thread(GetCurrentProcessId(), thread2, nullptr,true,&tid);
     g_drv.close_handle(pid, hThread);
     DBG_LOG("create thread:%p,tdi:%d",hThread, tid);
+#pragma endregion
+
+#pragma region 隐藏_显示线程
+    NTSTATUS status = g_drv.hide_thread(GetCurrentProcessId(),tid,true);
+    DBG_LOG("hide thread ok! threadid = %x,status = %x", tid, status);
+#pragma endregion
+
+    printf("-----------------------------------------------------------\n");
+    getchar();
+
+#pragma region 隐藏_显示线程
+    status = g_drv.hide_thread(GetCurrentProcessId(), tid, false); // false就为显示
+    if(NT_SUCCESS(status))
+        DBG_LOG("show thread ok!");
+    else
+        DBG_LOG("show thread failed,maybe its not be hide?");
 #pragma endregion
 
     printf("-----------------------------------------------------------\n");

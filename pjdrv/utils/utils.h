@@ -3,6 +3,12 @@
 
 namespace utils
 {
+	enum ELIST_TYPE
+	{
+		Thread = 0,
+		Process
+	};
+
 	PVOID get_system_function(const wchar_t* funcname);
 
 	VOID disable_notify_routine();
@@ -11,9 +17,9 @@ namespace utils
 
 	NTSTATUS remove_handle_from_table(HANDLE handle);
 
-	void unlink(PLIST_ENTRY entryList, PLIST_ENTRY node);
+	NTSTATUS unlink(PLIST_ENTRY entryList, PLIST_ENTRY node, ELIST_TYPE type);
 
-	void link(PLIST_ENTRY entryList, PLIST_ENTRY node);
+	NTSTATUS link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type);
 
 	void resume_all_unlink();
 }

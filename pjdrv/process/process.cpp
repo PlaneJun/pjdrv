@@ -83,7 +83,6 @@ PLIST_ENTRY process::find_process_link_by_pid(const HANDLE tid)
 	return unlink_entry;
 }
 
-
 PVOID process::get_module_base(const HANDLE ProcessId, const wchar_t* module_name, PDWORD32 out_size)
 {
 	PEPROCESS pEProcess = nullptr;
@@ -495,7 +494,7 @@ NTSTATUS process::protect_vmem(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T
 	return status;
 }
 
-NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID params, bool disable_notify, bool hide,PHANDLE handler, PULONG tid)
+NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool hide,PHANDLE handler, PHANDLE tid)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	PEPROCESS pEProcess = nullptr;
@@ -505,16 +504,16 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 	}
 
 	// 关闭通知回调；只处理了创建的，结束的时候还是可以捕获到
-	if(disable_notify)
+	if(hide)
 	{
 		utils::disable_notify_routine();
 	}
 
 	// 拷贝参数
-	HANDLE hThread = NULL;
+	HANDLE hThread = nullptr;
 	auto pEntry = reinterpret_cast<PUSER_THREAD_START_ROUTINE>(entry);
 	bool bHide = hide;
-	ULONG ulTid = NULL;
+	HANDLE ulTid = NULL;
 
 	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
@@ -538,8 +537,8 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 			CLIENT_ID cid{};
 			if(NT_SUCCESS(thread::get_Cid(pEthread, &cid)))
 			{
-				ulTid = reinterpret_cast<unsigned long>(cid.UniqueThread);
-				DBG_LOG("create thread tid:%d", ulTid);
+				ulTid = cid.UniqueThread;
+				DBG_LOG("create thread tid:%x", ulTid);
 			}
 
 			if (bHide)
@@ -552,7 +551,7 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 					DBG_LOG("pEprocess = %p,threadListHeader = %p", pEProcess, threadListHeader);
 					if (const auto l = find_thread_link_by_tid(threadListHeader, cid.UniqueThread))
 					{
-						utils::unlink(threadListHeader, l);
+						utils::unlink(threadListHeader, l,utils::ELIST_TYPE::Thread);
 						DBG_LOG("unlink entry = %p", l);
 					}
 				}
@@ -580,8 +579,8 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 	ObDereferenceObject(pEProcess);
 
 	memory::write_safe<HANDLE>(handler, hThread);
-	memory::write_safe<ULONG>(tid, ulTid);
-	if (disable_notify)
+	memory::write_safe<HANDLE>(tid, ulTid);
+	if (hide)
 	{
 		utils::enable_notify_routine();
 	}
@@ -605,7 +604,7 @@ NTSTATUS process::close_handle(const HANDLE ProcessId, HANDLE handler)
 	return status;
 }
 
-NTSTATUS process::wait_single_object(const HANDLE ProcessId, HANDLE handler, bool alert, unsigned int wait_time)
+NTSTATUS process::wait_single_object(const HANDLE ProcessId, HANDLE handle, bool alert, unsigned int wait_time)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	PEPROCESS pEProcess = nullptr;
@@ -623,7 +622,43 @@ NTSTATUS process::wait_single_object(const HANDLE ProcessId, HANDLE handler, boo
 	BOOLEAN alert_ = alert;
 	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
-	status = ZwWaitForSingleObject(handler, alert_, interval.QuadPart > 0? &interval : nullptr);
+	status = ZwWaitForSingleObject(handle, alert_, interval.QuadPart > 0? &interval : nullptr);
+	KeUnstackDetachProcess(&apc_state);
+	ObDereferenceObject(pEProcess);
+	return status;
+}
+
+NTSTATUS process::hide_thread_by_id(const HANDLE ProcessId, HANDLE tid, bool hide)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PEPROCESS pEProcess = nullptr;
+	if (!get_eprocess(ProcessId, &pEProcess))
+	{
+		return status;
+	}
+
+	HANDLE tid_ = tid;
+	KAPC_STATE apc_state{};
+	KeStackAttachProcess(pEProcess, &apc_state);
+
+	// hide = true -> 从ThreadListEntry里断链
+	// hide = false -> 因为已经断链了得去记录里查找
+	PLIST_ENTRY threadListHeader = nullptr;
+	if (NT_SUCCESS(get_ThreadListHead(pEProcess, &threadListHeader)))
+	{
+		if (hide)
+		{
+			if (const auto l = find_thread_link_by_tid(threadListHeader, tid_))
+			{
+				utils::unlink(threadListHeader, l, utils::ELIST_TYPE::Thread);
+			}
+		}
+		else
+		{
+			utils::link(threadListHeader,tid_, utils::ELIST_TYPE::Thread);
+		}
+	}
+
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
 	return status;

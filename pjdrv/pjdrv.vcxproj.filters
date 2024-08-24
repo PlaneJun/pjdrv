@@ -121,5 +121,8 @@
     <ClInclude Include="log\log.hpp">
       <Filter>log</Filter>
     </ClInclude>
+    <ClInclude Include="macro_defs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
