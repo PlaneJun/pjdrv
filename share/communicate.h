@@ -108,6 +108,7 @@ namespace communicate
 			unsigned long long ThreadListEntry;
 			unsigned long long StartAddress;
 			unsigned long long Win32StartAddress;
+			unsigned long long Process;
 		}ethread;
 
 		struct

@@ -14,6 +14,8 @@ public:
 
 	static MACRO_GET_PTR(PVOID,symbols::data_.ethread,StartAddress)
 
+	static MACRO_GET_PTR(PVOID, symbols::data_.ethread, Process)
+
 	static void set_start_addr(PETHREAD ethread, PVOID start, bool isWin32);
 
 	static NTSTATUS get_tid_by_handle(HANDLE hThread,PHANDLE tid);

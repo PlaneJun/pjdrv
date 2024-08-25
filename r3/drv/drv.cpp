@@ -88,6 +88,7 @@ drv::ERROR_CODE drv::init()
 		symbs.ethread.ThreadListEntry = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"ThreadListEntry");
 		symbs.ethread.Win32StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"Win32StartAddress");
 		symbs.ethread.StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"StartAddress");
+		symbs.ethread.Process = EzPdbGetStructPropertyOffset(&pdb, "_KTHREAD", L"Process");
 		symbs.global.KeServiceDescriptorTable = EzPdbGetRva(&pdb, "KeServiceDescriptorTable");
 		symbs.global.PspNotifyEnableMask = EzPdbGetRva(&pdb, "PspNotifyEnableMask");
 		symbs.global.ExDestroyHandle = EzPdbGetRva(&pdb, "ExDestroyHandle");
@@ -101,6 +102,7 @@ drv::ERROR_CODE drv::init()
 		DBG_LOG("ThreadListEntry = %x", symbs.ethread.ThreadListEntry);
 		DBG_LOG("Win32StartAddress = %x", symbs.ethread.Win32StartAddress);
 		DBG_LOG("StartAddress = %x", symbs.ethread.StartAddress);
+		DBG_LOG("Process = %x", symbs.ethread.Process);
 		DBG_LOG("KeServiceDescriptorTable = %p", symbs.global.KeServiceDescriptorTable);
 		DBG_LOG("PspNotifyEnableMask = %p", symbs.global.PspNotifyEnableMask);
 		DBG_LOG("ExMapHandleToPointer = %p", symbs.global.ExMapHandleToPointer);
@@ -298,7 +300,7 @@ NTSTATUS drv::hide_thread(DWORD ProcessId, HANDLE tid, bool hide)
 	communicate::Thread thread{};
 	thread.threadid = tid;
 	thread.hide = hide;
-	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_HideProcess, ProcessId, &thread);
+	NTSTATUS status = send_control(communicate::ECMD::cmd_R3_HideThread, ProcessId, &thread);
 	return status;
 }
 

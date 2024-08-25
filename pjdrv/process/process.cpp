@@ -646,16 +646,17 @@ NTSTATUS process::hide_thread_by_id(const HANDLE ProcessId, HANDLE tid, bool hid
 	PLIST_ENTRY threadListHeader = nullptr;
 	if (NT_SUCCESS(get_ThreadListHead(pEProcess, &threadListHeader)))
 	{
+		KdBreakPoint();
 		if (hide)
 		{
 			if (const auto l = find_thread_link_by_tid(threadListHeader, tid_))
 			{
-				utils::unlink(threadListHeader, l, utils::ELIST_TYPE::Thread);
+				status = utils::unlink(threadListHeader, l, utils::ELIST_TYPE::Thread);
 			}
 		}
 		else
 		{
-			utils::link(threadListHeader,tid_, utils::ELIST_TYPE::Thread);
+			status = utils::link(threadListHeader,tid_, utils::ELIST_TYPE::Thread);
 		}
 	}
 

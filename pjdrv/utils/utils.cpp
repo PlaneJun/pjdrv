@@ -30,7 +30,8 @@ struct Custom_LinkKey
 	}
 };
 
-std::map<Custom_LinkKey, std::vector<Custom_LinkValue>> g_unlinks{};
+// 以进程id为Key，保存对应被断链的 进程链表 或 线程链表
+std::map<Custom_LinkKey, std::vector<Custom_LinkValue>> g_unlink_mrg{};
 
 typedef struct _HANDLE_TABLE* PHANDLE_TABLE;
 typedef struct HANDLE_TABLE_ENTRY* PHANDLE_TABLE_ENTRY;
@@ -140,45 +141,48 @@ NTSTATUS utils::unlink(PLIST_ENTRY entryList, PLIST_ENTRY node, ELIST_TYPE type)
 			break;
 		}
 
+		
 		Custom_LinkKey key{};
 		key.type = type;
 		key.info.node = entryList;
-		if (type == Process)
-		{
-			HANDLE pid{};
-			if (NT_SUCCESS(process::get_UniqueProcessId(reinterpret_cast<PEPROCESS>(
-				reinterpret_cast<PUCHAR>(entryList) - symbols::data_.eprocess.UniqueProcessId), &pid)))
-			{
-				key.info.id = pid;
-			}
-			else
-			{
-				break;
-			}
-		}
-		else if (type == Thread)
-		{
-			CLIENT_ID cid{};
-			if (NT_SUCCESS(thread::get_Cid(reinterpret_cast<PETHREAD>(
-				reinterpret_cast<PUCHAR>(entryList) - symbols::data_.ethread.ThreadListEntry), &cid)))
-			{
-				key.info.id = cid.UniqueThread;
-			}
-			else
-			{
-				break;
-			}
-		}
-
-		// insert
-		if (g_unlinks.count(key) == 0)
-		{
-			g_unlinks[key] = {};
-		}
 
 		Custom_LinkValue info{};
 		info.node = node;
-		g_unlinks[key].push_back(info);
+
+		// 获取被断链节点的pid，和节点对应的 pid/tid
+		if (type == Process)
+		{
+			PVOID eprocess = reinterpret_cast<PUCHAR>(node) - symbols::data_.eprocess.ActiveProcessLinks;
+			if (!NT_SUCCESS(process::get_UniqueProcessId(eprocess, &key.info.id)))
+				break;
+
+			info.id = key.info.id;
+		}
+		else if (type == Thread)
+		{
+			PVOID ethread = reinterpret_cast<PUCHAR>(node) - symbols::data_.ethread.ThreadListEntry;
+
+			PEPROCESS eprocess = memory::read_safe<PEPROCESS>(static_cast<PUCHAR>(ethread) + symbols::data_.ethread.Process);
+			if(!eprocess)
+				break;
+
+			if (!NT_SUCCESS(process::get_UniqueProcessId(eprocess, &key.info.id)))
+				break;
+
+			CLIENT_ID cid{};
+			if (!NT_SUCCESS(thread::get_Cid(ethread, &cid)))
+				break;
+
+			info.id = cid.UniqueThread;
+		}
+
+		// inster to mrg
+		if (g_unlink_mrg.count(key) == 0)
+		{
+			g_unlink_mrg[key] = {};
+		}
+
+		g_unlink_mrg[key].push_back(info);
 		RemoveEntryList(node);
 		status = STATUS_SUCCESS;
 	}
@@ -196,7 +200,7 @@ NTSTATUS utils::link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type)
 
 	// 要恢复的节点
 	PLIST_ENTRY node = nullptr;
-	for(auto& k : g_unlinks)
+	for(auto& k : g_unlink_mrg)
 	{
 		// 确保链表头来源与参数一致
 		if(k.first.info.node == entryList && k.first.type == type)
@@ -219,7 +223,7 @@ NTSTATUS utils::link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type)
 
 				// 当前节点为空则释放父节点
 				if(k.second.empty())
-					g_unlinks.erase(k.first);
+					g_unlink_mrg.erase(k.first);
 
 				// 恢复
 				InsertTailList(entryList, node);
@@ -235,7 +239,7 @@ NTSTATUS utils::link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type)
 
 void utils::resume_all_unlink()
 {
-	auto bak = g_unlinks;
+	auto bak = g_unlink_mrg;
 	for (const auto& t : bak)
 	{
 		for (const auto& n : t.second)
@@ -243,5 +247,5 @@ void utils::resume_all_unlink()
 			link(t.first.info.node, n.id,t.first.type);
 		}
 	}
-	g_unlinks.clear();
+	g_unlink_mrg.clear();
 }

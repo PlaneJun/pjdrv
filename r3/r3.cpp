@@ -84,7 +84,7 @@ void thread2()
    Sleep(3000);
 }
 
-int main()
+int main2()
 {
     drv::ERROR_CODE status_code = g_drv.init();
     if (status_code != drv::ERROR_CODE::CODE_OK)
@@ -195,4 +195,37 @@ int main()
 #pragma endregion
 
     system("pause");
+}
+
+int main()
+{
+    drv::ERROR_CODE status_code = g_drv.init();
+    if (status_code != drv::ERROR_CODE::CODE_OK)
+    {
+        DBG_LOG("error msg:%s", g_drv.get_error_msg(status_code));
+        system("pause");
+        return 0;
+    }
+
+    DBG_LOG("init ok");
+    getchar();
+
+
+
+    //DWORD tid{};
+    //CloseHandle(CreateThread(NULL,NULL,(LPTHREAD_START_ROUTINE)thread1,NULL,NULL,&tid));
+    //DBG_LOG("thread id = %d\n",tid);
+
+    //getchar();
+
+    //NTSTATUS status = g_drv.hide_thread(GetCurrentProcessId(),reinterpret_cast<HANDLE>(tid),true);
+    //DBG_LOG("thread hide,%x\n", status);
+
+    //getchar();
+
+    //status = g_drv.hide_thread(GetCurrentProcessId(), reinterpret_cast<HANDLE>(tid), false);
+    //DBG_LOG("thread show,%x\n", status);
+
+    //getchar();
+    ExitProcess(0);
 }
