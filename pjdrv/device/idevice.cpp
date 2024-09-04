@@ -13,60 +13,59 @@ NTSTATUS IDevice::init_device(const wchar_t* hid_name, const wchar_t* class_name
 		return status;
 	}
 
-	PDRIVER_OBJECT pdrv_hid = NULL;
-	UNICODE_STRING str_drvMouhid = {0};
-	RtlInitUnicodeString(&str_drvMouhid, hid_name);
-	status = ObReferenceObjectByName(&str_drvMouhid, OBJ_CASE_INSENSITIVE, 0, FILE_ANY_ACCESS, *IoDriverObjectType, KernelMode, 0, (PVOID*)&pdrv_hid);
+	PDRIVER_OBJECT pdrv_dev = NULL;
+	UNICODE_STRING str_drvhid = {0};
+	RtlInitUnicodeString(&str_drvhid, hid_name);
+	status = ObReferenceObjectByName(&str_drvhid, OBJ_CASE_INSENSITIVE, 0, FILE_ANY_ACCESS, *IoDriverObjectType, KernelMode, 0, (PVOID*)&pdrv_dev);
 	if (!NT_SUCCESS(status))
 	{
 		return status;
 	}
 
-	ObDereferenceObject(pdrv_hid);
+	ObDereferenceObject(pdrv_dev);
 	PDRIVER_OBJECT pdrv_class = NULL;
-	UNICODE_STRING str_drvMouclass = {0};
-	RtlInitUnicodeString(&str_drvMouclass, class_name);
-	status = ObReferenceObjectByName(&str_drvMouclass, OBJ_CASE_INSENSITIVE, 0, FILE_ANY_ACCESS, *IoDriverObjectType, KernelMode, 0, (PVOID*)&pdrv_class);
+	UNICODE_STRING str_drvclass = {0};
+	RtlInitUnicodeString(&str_drvclass, class_name);
+	status = ObReferenceObjectByName(&str_drvclass, OBJ_CASE_INSENSITIVE, 0, FILE_ANY_ACCESS, *IoDriverObjectType, KernelMode, 0, (PVOID*)&pdrv_class);
 	if (!NT_SUCCESS(status))
 		return status;
 	ObDereferenceObject(pdrv_class);
 
 	status = STATUS_UNSUCCESSFUL;
-	PDEVICE_OBJECT pdev_hid = pdrv_hid->DeviceObject;
+
+	auto vClassDriverStart = reinterpret_cast<PVOID>(pdrv_class->DriverStart);
+	auto vClassDriverEnd = reinterpret_cast<PVOID>(reinterpret_cast<uintptr_t>(vClassDriverStart) + pdrv_class->DriverSize);
+
+	PDEVICE_OBJECT pdev_hid = pdrv_dev->DeviceObject;
 	while (pdev_hid)
 	{
-		//获取保存着mouclass设备的设备
-		PDEVICE_OBJECT pdev_attach = pdev_hid;
-		while (pdev_attach)
+		auto vDeviceExtBytes = reinterpret_cast<intptr_t>(pdev_hid->DeviceObjectExtension) - reinterpret_cast<intptr_t>(pdev_hid->DeviceExtension);
+		if (vDeviceExtBytes > 0)
 		{
-			if (!RtlCompareUnicodeString(&pdev_attach->AttachedDevice->DriverObject->DriverName, &str_drvMouclass, TRUE))
-				break;
-			pdev_attach = pdev_attach->AttachedDevice;
-		}
-		if (pdev_attach->AttachedDevice && pdev_attach->AttachedDevice == pdrv_class->DeviceObject)
-		{
-			dev_klass_ = pdrv_class->DeviceObject;
-			ULONG_PTR devext = (ULONG_PTR)pdev_attach->DeviceExtension;
-			ULONG_PTR drvStart = (ULONG_PTR)pdrv_class->DriverStart;
-			ULONG drvSize = pdrv_class->DriverSize;
-			for (int i = 0; i < 4096; i++)
-			{
-				if (!MmIsAddressValid((PVOID)devext))
-					break;
+			auto vDeviceExtPtrCount = vDeviceExtBytes / sizeof(void*) - 1;
+			auto vDeviceExt = static_cast<void**>(pdev_hid->DeviceExtension);
 
-				ULONG_PTR tmp = *(PULONG_PTR)devext;
-				//如果在设备扩展中找到一个地址位于mouclass模块中，就认为这是我们要的回调函数地址
-				if (tmp >= drvStart && tmp < (drvStart + drvSize))
+			for (auto vClassDevice = pdrv_class->DeviceObject; vClassDevice; vClassDevice = vClassDevice->NextDevice)
+			{
+				for (auto i = 0u; i < vDeviceExtPtrCount; ++i)
 				{
-					lpfnClassServiceCallback_ = (PVOID)tmp;
-					status = STATUS_SUCCESS;
+					if (vDeviceExt[i] == vClassDevice &&
+						vDeviceExt[i + 1] > vClassDriverStart &&
+						vDeviceExt[i + 1] < vClassDriverEnd)
+					{
+						dev_klass_ = vClassDevice;
+						lpfnClassServiceCallback_ = vDeviceExt[i + 1];
+
+						status = STATUS_SUCCESS;
+						break;
+					}
+				}
+				if (NT_SUCCESS(status))
+				{
 					break;
 				}
-				devext++;
 			}
 		}
-		if (NT_SUCCESS(status))
-			break;
 		pdev_hid = pdev_hid->NextDevice;
 	}
 	return status;

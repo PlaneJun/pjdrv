@@ -316,8 +316,31 @@ bool drv::mouse_event_ex(DWORD x, DWORD y, USHORT flag)
 bool drv::keybd_event_ex(DWORD KeyCode, USHORT flag)
 {
 	communicate::Device device{};
-	device.keycode = KeyCode;
-	device.flags = flag;
+	device.keycode = MapVirtualKey(KeyCode, MAPVK_VK_TO_VSC);
+	device.flags = flag ;
+	switch (KeyCode)
+	{
+		case VK_INSERT:
+		case VK_DELETE:
+		case VK_HOME:
+		case VK_END:
+		case VK_PRIOR:	//Page Up
+		case VK_NEXT:	//Page Down
+
+		case VK_LEFT:
+		case VK_UP:
+		case VK_RIGHT:
+		case VK_DOWN:
+
+		case VK_DIVIDE:
+
+		case VK_LWIN:
+		case VK_RCONTROL:
+		case VK_RWIN:
+		case VK_RMENU:	//ALT
+			device.flags |= RI_KEY_E0;
+			break;
+	}
 	NTSTATUS status = send_control(communicate::CMD_R3_KbdEvent, 0, &device);
 	return NT_SUCCESS(status);
 }

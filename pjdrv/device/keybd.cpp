@@ -2,11 +2,19 @@
 
 NTSTATUS Keybd::init()
 {
-	return init_device(L"\\Driver\\kbdhid", L"\\Driver\\kbdclass");
+	//KdBreakPoint();
+	NTSTATUS status = STATUS_SUCCESS;
+	status = init_device(L"\\Driver\\kbdhid", L"\\Driver\\kbdclass");
+	if(!NT_SUCCESS(status))
+	{
+		status = init_device(L"\\Driver\\i8042prt", L"\\Driver\\kbdclass");
+	}
+	return status;
 }
 
 void Keybd::keybd_event_(ULONG keyCode, USHORT flags)
 {
+	DbgPrintEx(77, 0, "lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
 	if (!lpfnClassServiceCallback_)
 		return;
 
