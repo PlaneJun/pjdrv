@@ -1,4 +1,8 @@
 #pragma once
 #include <ntifs.h>
 
-#define DBG_LOG(Format, ...) KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[LOG] [" __FUNCTION__ ":%u]: " Format "\n", __LINE__, ## __VA_ARGS__))
+#ifdef _DEBUG
+#define DBG_LOG(fmt, ...) DbgPrintEx(DPFLTR_DEFAULT_ID,DPFLTR_ERROR_LEVEL, "[LOG] [" __FUNCTION__ ":%u]: " fmt "\n", __LINE__, ## __VA_ARGS__)
+#else
+#define DBG_LOG(...)
+#endif

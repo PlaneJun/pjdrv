@@ -1,5 +1,6 @@
 #include <ntifs.h>
 #include "control/control.h"
+#include "symbols/symbols.h"
 #include "log/log.hpp"
 
 
@@ -18,8 +19,16 @@ EXTERN_C NTSTATUS DriverMain(const PDRIVER_OBJECT pDrv, const PUNICODE_STRING pR
 	pDrv->DriverUnload = UnLoadDrv;
 	do 
 	{
-		g_con = new Control;
-		g_con->install(pDrv);
+		if(symbols::init())
+		{
+			DBG_LOG("symbols::init ok!");
+			g_con = new Control;
+			g_con->install(pDrv);
+		}
+		else
+		{
+			DBG_LOG("symbols::init failed!");
+		}
 	} while (FALSE);
 	return status;
 }

@@ -37,11 +37,12 @@ namespace communicate
 		CMD_R3_WaitSingleObject,		
 		CMD_R3_KbdEvent,
 		CMD_R3_MouseEvent,
-		cmd_R3_HideThread,				// hide/show thread
+		cmd_R3_HideThread,				// hide/show thread:unlink ok,rm handle no
 		CMD_R3_HideProcess,				// hide/show process
 		CMD_R3_ProtectProcess,			// TODO
 		CMD_R3_ProtectWindowm,			// TODO
-		CMD_Symbol
+		CMD_R3_DeleteFile,				// force delete file
+		CMD_R3_TerminalProcess,			// TODO
 	};
 
 	enum ERWTYPE : unsigned char
@@ -91,36 +92,10 @@ namespace communicate
 		unsigned int wait_time;
 	}Thread,*PThread;
 
-	typedef struct _TSYMBOLS
+	typedef struct _TPROCESS
 	{
-		struct
-		{
-			unsigned long long VadRoot;
-			unsigned long long DirectoryTableBase;
-			unsigned long long ThreadListHead;
-			unsigned long long ActiveProcessLinks;
-			unsigned long long UniqueProcessId;
-		}eprocess;
-
-		struct
-		{
-			unsigned long long Cid;
-			unsigned long long ThreadListEntry;
-			unsigned long long StartAddress;
-			unsigned long long Win32StartAddress;
-			unsigned long long Process;
-		}ethread;
-
-		struct
-		{
-			unsigned long long KeServiceDescriptorTable;
-			unsigned long long PspNotifyEnableMask;
-			unsigned long long PspCidTable;
-			unsigned long long ExMapHandleToPointer;
-			unsigned long long ExDestroyHandle;
-		}global;
-
-	}Symbols,*PSymbols;
+		bool hide;
+	}Process,*PProcess;
 
 	typedef struct _TDEVICE
 	{

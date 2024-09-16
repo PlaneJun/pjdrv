@@ -2,7 +2,7 @@
 #include "../memory/memory.h"
 
 
-void thread::set_start_addr(PETHREAD ethread, PVOID start, bool isWin32)
+void thread::set_start_addr(const PETHREAD ethread, PVOID start, bool isWin32)
 {
 	if (!MmIsAddressValid(ethread))
 	{
@@ -25,7 +25,7 @@ void thread::set_start_addr(PETHREAD ethread, PVOID start, bool isWin32)
 	}
 }
 
-NTSTATUS thread::get_tid_by_handle(HANDLE hThread, PHANDLE tid)
+NTSTATUS thread::get_tid_by_handle(const HANDLE hThread, const PHANDLE tid)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	PETHREAD pEthread = nullptr;
@@ -48,4 +48,26 @@ NTSTATUS thread::get_tid_by_handle(HANDLE hThread, PHANDLE tid)
 		ObDereferenceObject(pEthread);
 	}
 	return status;
+}
+
+NTSTATUS thread::get_ethread(const HANDLE tid, PETHREAD* pEThread)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	status = PsLookupThreadByThreadId(tid, pEThread);
+	if (!NT_SUCCESS(status) && !MmIsAddressValid(*pEThread))
+	{
+		return false;
+	}
+	return true;
+}
+
+bool thread::is_alive(const HANDLE tid)
+{
+	PETHREAD tmp = nullptr;
+	if (get_ethread(tid, &tmp))
+	{
+		ObDereferenceObject(tmp);
+		return true;
+	}
+	return false;
 }

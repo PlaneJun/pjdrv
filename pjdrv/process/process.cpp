@@ -1,10 +1,12 @@
 #include "process.h"
-#include <Veil.h>
 #include "../memory/memory.h"
 #include "../utils/utils.h"
 #include "../thread/thread.h"
 #include "../module/module.h"
 #include "../log/log.hpp"
+#include <Veil.h>
+#include "../ssdt/ssdt.h"
+
 
 bool process::get_eprocess(const HANDLE ProcessId, PEPROCESS* pEProcess)
 {
@@ -49,36 +51,28 @@ PLIST_ENTRY process::find_thread_link_by_tid(PLIST_ENTRY header,const HANDLE tid
 	return unlink_entry;
 }
 
-PLIST_ENTRY process::find_process_link_by_pid(const HANDLE tid)
+PLIST_ENTRY process::find_process_link_by_pid(PLIST_ENTRY header, const HANDLE pid)
 {
 	PLIST_ENTRY unlink_entry = nullptr;
 
-
-	PLIST_ENTRY ListHeader = nullptr;
-	if (!NT_SUCCESS(get_ActiveProcessLinks(PsGetCurrentProcess(),&ListHeader)))
+	PLIST_ENTRY nextNode = header->Flink;
+	do
 	{
-		return unlink_entry;
-	}
-
-	PLIST_ENTRY pNextLinks = ListHeader->Flink;
-	while (pNextLinks->Flink != ListHeader->Flink)
-	{
-		PEPROCESS et = reinterpret_cast<PEPROCESS>(reinterpret_cast<PUCHAR>(pNextLinks) - symbols::data_.eprocess.ActiveProcessLinks);
+		PEPROCESS ep = reinterpret_cast<PEPROCESS>(reinterpret_cast<PUCHAR>(nextNode) - symbols::data_.eprocess.ActiveProcessLinks);
 		HANDLE pid_{};
-		if (!NT_SUCCESS(get_UniqueProcessId(et, &pid_)))
+		if (!NT_SUCCESS(get_UniqueProcessId(ep, &pid_)))
 		{
 			// 获取失败直接返回
 			break;
 		}
 
-		if (pid_ == tid)
+		if (pid_ == pid)
 		{
-			unlink_entry = pNextLinks;
+			unlink_entry = nextNode;
 			break;
 		}
-
-		pNextLinks = pNextLinks->Flink;
-	}
+		nextNode = nextNode->Flink;
+	} while (header->Flink != nextNode);
 
 	return unlink_entry;
 }
@@ -494,7 +488,7 @@ NTSTATUS process::protect_vmem(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T
 	return status;
 }
 
-NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool hide,PHANDLE handler, PHANDLE tid)
+NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool no_notify,PHANDLE handler, PHANDLE tid)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	PEPROCESS pEProcess = nullptr;
@@ -504,7 +498,7 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 	}
 
 	// 关闭通知回调；只处理了创建的，结束的时候还是可以捕获到
-	if(hide)
+	if(no_notify)
 	{
 		utils::disable_notify_routine();
 	}
@@ -512,75 +506,57 @@ NTSTATUS process::create_thread(const HANDLE ProcessId, PVOID entry, PVOID param
 	// 拷贝参数
 	HANDLE hThread = nullptr;
 	auto pEntry = reinterpret_cast<PUSER_THREAD_START_ROUTINE>(entry);
-	bool bHide = hide;
 	HANDLE ulTid = NULL;
 
 	KAPC_STATE apc_state{};
 	KeStackAttachProcess(pEProcess, &apc_state);
 	OBJECT_ATTRIBUTES obj_attr{};
 	InitializeObjectAttributes(&obj_attr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-	status = ZwCreateThreadEx(&hThread, THREAD_ALL_ACCESS,
-									  &obj_attr, ZwCurrentProcess(),
-									  pEntry, params, 0, 0, 0x1000, 0x100000, nullptr);
-	if(NT_SUCCESS(status))
+
+	KdBreakPoint();
+	const auto lpfnZwCreateThreadEx = reinterpret_cast<decltype(ZwCreateThreadEx)*>(ssdt::get_instance()->get_func_by_name("ZwCreateThreadEx"));
+	if(lpfnZwCreateThreadEx)
 	{
-		PETHREAD pEthread = nullptr;
-		if (NT_SUCCESS(ObReferenceObjectByHandle(
-			hThread,
-			THREAD_ALL_ACCESS,
-			*PsThreadType,
-			KernelMode,
-			reinterpret_cast<PVOID*>(&pEthread),
-			nullptr
-		)))
+		PUCHAR PreviousMode_ptr = NULL;
+		if(NT_SUCCESS(thread::get_PreviousMode(PsGetCurrentThread(), &PreviousMode_ptr)))
 		{
-			CLIENT_ID cid{};
-			if(NT_SUCCESS(thread::get_Cid(pEthread, &cid)))
-			{
-				ulTid = cid.UniqueThread;
-				DBG_LOG("create thread tid:%x", ulTid);
-			}
+			UCHAR prevMode = memory::read_safe<UCHAR>(PreviousMode_ptr);
+			memory::write_safe<UCHAR>(PreviousMode_ptr,KernelMode);
+			status = lpfnZwCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &obj_attr, ZwCurrentProcess(), pEntry, params, 0, 0, 0x1000, 0x100000, nullptr);
+			memory::write_safe<UCHAR>(PreviousMode_ptr, prevMode);
 
-			if (bHide)
+			if (NT_SUCCESS(status))
 			{
-				// NOTE：断链 or 摘句柄后，进程关闭 or 线程执行结束后就会蓝屏!!!!!!
-				// 1）断链
-				PLIST_ENTRY threadListHeader = nullptr;
-				if(NT_SUCCESS(get_ThreadListHead(pEProcess, &threadListHeader)))
+				// 获取创建线程的ethread
+				PETHREAD pEthread = nullptr;
+				if (NT_SUCCESS(ObReferenceObjectByHandle(
+					hThread,
+					THREAD_ALL_ACCESS,
+					*PsThreadType,
+					KernelMode,
+					reinterpret_cast<PVOID*>(&pEthread),
+					nullptr
+				)))
 				{
-					DBG_LOG("pEprocess = %p,threadListHeader = %p", pEProcess, threadListHeader);
-					if (const auto l = find_thread_link_by_tid(threadListHeader, cid.UniqueThread))
+					CLIENT_ID cid{};
+					status = thread::get_Cid(pEthread, &cid);
+					if (NT_SUCCESS(status))
 					{
-						utils::unlink(threadListHeader, l,utils::ELIST_TYPE::Thread);
-						DBG_LOG("unlink entry = %p", l);
+						ulTid = cid.UniqueThread;
+						DBG_LOG("create thread tid:%x", ulTid);
+						
 					}
-				}
-
-				//  2）摘句柄
-				//utils::remove_handle_from_table(cid.UniqueThread);
-				
-				//3）修改入口
-				UNICODE_STRING mn{};
-				RtlInitUnicodeString(&mn, L"ntdll.dll");
-				DWORD32 msize = NULL;
-				PUCHAR ntBase = static_cast<PUCHAR>(get_module_base_by_eprocess(pEProcess, &mn, &msize));
-				if (ntBase)
-				{
-					thread::set_start_addr(pEthread, ntBase + 0x1000, true);
-					thread::set_start_addr(pEthread, ntBase + 0x1000, false);
+					ObDereferenceObject(pEthread);
 				}
 			}
-
-			ObDereferenceObject(pEthread);
 		}
 	}
-
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
 
 	memory::write_safe<HANDLE>(handler, hThread);
 	memory::write_safe<HANDLE>(tid, ulTid);
-	if (hide)
+	if (no_notify)
 	{
 		utils::enable_notify_routine();
 	}
@@ -646,21 +622,94 @@ NTSTATUS process::hide_thread_by_id(const HANDLE ProcessId, HANDLE tid, bool hid
 	PLIST_ENTRY threadListHeader = nullptr;
 	if (NT_SUCCESS(get_ThreadListHead(pEProcess, &threadListHeader)))
 	{
-		KdBreakPoint();
 		if (hide)
 		{
-			if (const auto l = find_thread_link_by_tid(threadListHeader, tid_))
+			// 1）断链
+			if (const auto l = find_thread_link_by_tid(threadListHeader, tid))
 			{
-				status = utils::unlink(threadListHeader, l, utils::ELIST_TYPE::Thread);
+				status = utils::unlink_sync(threadListHeader, l, utils::ELIST_TYPE::Thread);
+				DBG_LOG("unlink entry = %p", l);
 			}
+
+			//  2）摘句柄
+			if (NT_SUCCESS(status))
+			{
+				status = utils::remove_handle_from_table_sync(tid);
+				DBG_LOG("remove handle ok");
+			}
+
 		}
 		else
 		{
-			status = utils::link(threadListHeader,tid_, utils::ELIST_TYPE::Thread);
+			// 这里需要关注恢复的顺序，如果先恢复断链,会因为抹句柄的原因，内部is_alive函数判断不成功
+			// 所以这里需要先恢复句柄
+			if (NT_SUCCESS(utils::resume_handle_sync(tid)))
+			{
+				status = utils::link_sync(threadListHeader, tid, utils::ELIST_TYPE::Process);
+			}
+			if (NT_SUCCESS(status))
+			{
+				DBG_LOG("resume ok");
+			}
 		}
 	}
 
 	KeUnstackDetachProcess(&apc_state);
 	ObDereferenceObject(pEProcess);
 	return status;
+}
+
+NTSTATUS process::hide_process_by_id(const HANDLE ProcessId, bool hide)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	do
+	{
+		PLIST_ENTRY activity_process = nullptr;
+		if (!NT_SUCCESS(get_ActiveProcessLinks(PsGetCurrentProcess(), &activity_process)))
+		{
+			break;
+		}
+
+		if (hide)
+		{
+			// 先断链
+			if (const auto l = find_process_link_by_pid(activity_process,ProcessId))
+			{
+				status = utils::unlink_sync(activity_process, l, utils::ELIST_TYPE::Process);
+			}
+
+			// 抹句柄
+			if (NT_SUCCESS(status))
+			{
+				status = utils::remove_handle_from_table_sync(ProcessId);
+			}
+		}
+		else
+		{
+			// 这里需要关注恢复的顺序，如果先恢复断链,会因为抹句柄的原因，内部is_alive函数判断不成功
+			// 所以这里需要先恢复句柄
+			if(NT_SUCCESS(utils::resume_handle_sync(ProcessId)))
+			{
+				status = utils::link_sync(activity_process, ProcessId, utils::ELIST_TYPE::Process);
+			}
+			if (NT_SUCCESS(status))
+			{
+				DBG_LOG("resume ok");
+			}
+		}
+	}while(false);
+
+	return status;
+
+}
+
+bool process::is_alive(const HANDLE ProcessId)
+{
+	PEPROCESS tmp = nullptr;
+	if(get_eprocess(ProcessId, &tmp))
+	{
+		ObDereferenceObject(tmp);
+		return true;
+	}
+	return false;
 }

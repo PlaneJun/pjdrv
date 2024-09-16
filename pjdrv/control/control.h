@@ -4,6 +4,6 @@
 class Control
 {
 public:
-	void install(PDRIVER_OBJECT pDrv);
+	NTSTATUS install(PDRIVER_OBJECT pDrv);
 	void uninstall();
 };

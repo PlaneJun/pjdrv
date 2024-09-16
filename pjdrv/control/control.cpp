@@ -1,10 +1,11 @@
 #include "control.h"
 #include <stdint.h>
+#include <ntifs.h>
+#include <Veil.h>
 
 #include "../memory/memory.h"
 #include "../module/module.h"
 #include "../utils/utils.h"
-#include "../symbols/symbols.hpp"
 #include "../device/mouse.h"
 #include "../device/keybd.h"
 #include "../process/process.h"
@@ -274,9 +275,17 @@ void IoDispatch(communicate::PParams pdata)
 				status = process::hide_thread_by_id(reinterpret_cast<HANDLE>(pdata->pid),p_thread->threadid,p_thread->hide);
 				break;
 			}
+			case communicate::ECMD::CMD_R3_HideProcess:
+			{
+				KdBreakPoint();
+				communicate::PProcess p_process = static_cast<decltype(p_process)>(pdata->buffer);
+				status = process::hide_process_by_id(reinterpret_cast<HANDLE>(pdata->pid),p_process->hide);
+				break;
+			}
 			case communicate::ECMD::CMD_R3_KbdEvent:
 			{
-				if (NT_SUCCESS(Keybd::init()))
+				status = Keybd::init();
+				if (NT_SUCCESS(status))
 				{
 					communicate::PDevice p_device = static_cast<decltype(p_device)>(pdata->buffer);
 					Keybd::keybd_event_(p_device->keycode, p_device->flags);
@@ -285,24 +294,12 @@ void IoDispatch(communicate::PParams pdata)
 			}
 			case communicate::ECMD::CMD_R3_MouseEvent:
 			{
-				if (NT_SUCCESS(Mouse::init()))
+				status = Mouse::init();
+				if (NT_SUCCESS(status))
 				{
 					communicate::PDevice p_device = static_cast<decltype(p_device)>(pdata->buffer);
 					Mouse::mouse_event_(p_device->mx, p_device->my, p_device->flags);
 				}
-				break;
-			}
-			case communicate::ECMD::CMD_Symbol:
-			{
-				communicate::PSymbols p_symbols = static_cast<decltype(p_symbols)>(pdata->buffer);
-				ULONG size = NULL;
-				ULONG64 ntBase = reinterpret_cast<ULONG64>(module::get_ntoskrnl_base(&size));
-				symbols::data_ = *p_symbols;
-				symbols::data_.global.PspNotifyEnableMask += ntBase;
-				symbols::data_.global.KeServiceDescriptorTable += ntBase;
-				symbols::data_.global.ExMapHandleToPointer += ntBase;
-				symbols::data_.global.ExDestroyHandle += ntBase;
-				symbols::data_.global.PspCidTable += ntBase;
 				break;
 			}
 		}
@@ -311,14 +308,43 @@ void IoDispatch(communicate::PParams pdata)
 	pdata->status = status;
 }
 
-void Control::install(PDRIVER_OBJECT pDrv)
+VOID cb_create_process(
+	_In_ HANDLE ParentId,
+	_In_ HANDLE ProcessId,
+	_In_ BOOLEAN Create
+	)
 {
+	if(!Create)
+	{
+		// DBG_LOG("exit ParentId:%d\tProcessId:%d", ParentId, ProcessId);
+		process::hide_process_by_id(ProcessId,false);
+	}
+
+}
+
+VOID cb_create_thread(
+	_In_ HANDLE ProcessId,
+	_In_ HANDLE ThreadId,
+	_In_ BOOLEAN Create
+	)
+{
+	// 线程退出时恢复
+	if(!Create)
+	{
+		// DBG_LOG("exit processId:%d\threadId:%d", ProcessId, ThreadId);
+		process::hide_thread_by_id(ProcessId, ThreadId,false);
+	}
+}
+
+NTSTATUS Control::install(PDRIVER_OBJECT pDrv)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 #ifdef IO_ahcache
 
 	g_AslLogPfnVPrintf = find_control_ptr();
 	if (g_AslLogPfnVPrintf == nullptr)
 	{
-		return;
+		return status;
 	}
 
 	//alloc memmory
@@ -335,7 +361,7 @@ void Control::install(PDRIVER_OBJECT pDrv)
 
 	if (!lpMem)
 	{
-		return;
+		return status;
 	}
 
 	//fill
@@ -365,21 +391,22 @@ void Control::install(PDRIVER_OBJECT pDrv)
 	{
 		*map = reinterpret_cast<ULONG64>(entry);
 		MmUnmapIoSpace(map, 8);
+		status = STATUS_SUCCESS;
 	}
 
 #else
 
-	NTSTATUS status = IoCreateDevice(pDrv, 0, &g_undevice_name, FILE_DEVICE_UNKNOWN, 0, 0, &g_device);
+	status = IoCreateDevice(pDrv, 0, &g_undevice_name, FILE_DEVICE_UNKNOWN, 0, 0, &g_device);
 	if (!NT_SUCCESS(status))
 	{
 		DBG_LOG("create virtual device failed,err:%x", status);
-		return;
+		return status;
 	}
 	status = IoCreateSymbolicLink(&g_unsymlink_name, &g_undevice_name);
 	if (!NT_SUCCESS(status))
 	{
 		DBG_LOG("create symbol link failed,err:%x", status);
-		return;
+		return status;
 	}
 
 	for (int i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; i++)
@@ -395,6 +422,24 @@ void Control::install(PDRIVER_OBJECT pDrv)
 	}
 #endif
 
+	// 过签名
+	PKLDR_DATA_TABLE_ENTRY pLdrData = static_cast<PKLDR_DATA_TABLE_ENTRY>(pDrv->DriverSection);
+	pLdrData->Flags = pLdrData->Flags | 0x20;
+
+	// 注册进程回调
+	
+	status = PsSetCreateProcessNotifyRoutine(cb_create_process,FALSE);
+	if(!NT_SUCCESS(status))
+	{
+		DBG_LOG("register create process notify failed,err:%x",status);
+	}
+
+	status = PsSetCreateThreadNotifyRoutine(cb_create_thread);
+	if (!NT_SUCCESS(status))
+	{
+		DBG_LOG("register create thread notify failed,err:%x", status);
+	}
+	return status;
 }
 
 void Control::uninstall()
@@ -413,7 +458,19 @@ void Control::uninstall()
 	}
 
 #else
-	IoDeleteSymbolicLink(&g_unsymlink_name);
-	IoDeleteDevice(g_device);
+	if(g_device)
+	{
+		IoDeleteSymbolicLink(&g_unsymlink_name);
+		IoDeleteDevice(g_device);
+
+		// 恢复隐藏的线程、进程
+		utils::resume_all_unlink_sync();
+		utils::resume_all_handle_sync();
+
+		// 注销回调
+		PsSetCreateProcessNotifyRoutine(cb_create_process, TRUE);
+		PsRemoveCreateThreadNotifyRoutine(cb_create_thread);
+	}
 #endif
+
 }

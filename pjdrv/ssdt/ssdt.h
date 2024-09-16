@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <ntifs.h>
 
 class ssdt
@@ -13,13 +14,15 @@ public:
 	} SYSTEM_SERVICE_TABLE, * PSYSTEM_SERVICE_TABLE;
 
 public:
-	bool ssdt_init();
+	static ssdt* get_instance();
 
-	ULONG64 get_func_by_index(ULONG index);
+	uintptr_t get_func_by_index(uint32_t index);
 
-	ULONG64 get_func_by_name(const char* funname);
+	uintptr_t get_func_by_name(const char* funname);
 
 private:
+	static ssdt* instance_;
+
 	PSYSTEM_SERVICE_TABLE KeServiceDescriptorTable_;
 
 	VOID GetKeServiceDescriptorTableAddrX64();

@@ -45,6 +45,12 @@
     <Filter Include="log">
       <UniqueIdentifier>{0ea385c6-01a2-4cd1-8f76-9f7a8f5ead8e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="sync">
+      <UniqueIdentifier>{f76b2bdb-0498-4b95-b97f-c64e8ff7b539}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="symbols\query-pdb">
+      <UniqueIdentifier>{85179ca9-7b5d-4d03-bbac-248b825f1446}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -80,6 +86,24 @@
     <ClCompile Include="thread\thread.cpp">
       <Filter>thread</Filter>
     </ClCompile>
+    <ClCompile Include="sync\lock.cpp">
+      <Filter>sync</Filter>
+    </ClCompile>
+    <ClCompile Include="symbols\symbols.cpp">
+      <Filter>symbols</Filter>
+    </ClCompile>
+    <ClCompile Include="symbols\query-pdb\berkeley.c">
+      <Filter>symbols\query-pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="symbols\query-pdb\khttp.cpp">
+      <Filter>symbols\query-pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="symbols\query-pdb\ksocket.c">
+      <Filter>symbols\query-pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="symbols\query-pdb\lib.cpp">
+      <Filter>symbols\query-pdb</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -112,7 +136,7 @@
     <ClInclude Include="ssdt\ssdt.h">
       <Filter>ssdt</Filter>
     </ClInclude>
-    <ClInclude Include="symbols\symbols.hpp">
+    <ClInclude Include="symbols\symbols.h">
       <Filter>symbols</Filter>
     </ClInclude>
     <ClInclude Include="thread\thread.h">
@@ -123,6 +147,42 @@
     </ClInclude>
     <ClInclude Include="macro_defs.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sync\lock.h">
+      <Filter>sync</Filter>
+    </ClInclude>
+    <ClInclude Include="struct.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\berkeley.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\httprequestparser.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\httpresponseparser.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\json.hpp">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\khttp.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\kquery_pdb.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\ksocket.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\request.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\response.h">
+      <Filter>symbols\query-pdb</Filter>
+    </ClInclude>
+    <ClInclude Include="symbols\query-pdb\urlparser.h">
+      <Filter>symbols\query-pdb</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

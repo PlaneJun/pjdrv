@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="..\packages\Musa.Runtime.0.3.5\build\native\Musa.Runtime.props" Condition="Exists('..\packages\Musa.Runtime.0.3.5\build\native\Musa.Runtime.props')" />
-  <Import Project="..\packages\Musa.Core.0.3.4\build\native\Musa.Core.props" Condition="Exists('..\packages\Musa.Core.0.3.4\build\native\Musa.Core.props')" />
+  <Import Project="..\packages\ucxxrt.3.0.7\build\ucxxrt.props" Condition="Exists('..\packages\ucxxrt.3.0.7\build\ucxxrt.props')" />
   <Import Project="..\packages\Musa.Veil.1.2.5\build\native\Musa.Veil.props" Condition="Exists('..\packages\Musa.Veil.1.2.5\build\native\Musa.Veil.props')" />
   <Import Project="..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props" Condition="Exists('..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props')" />
   <ItemGroup Label="ProjectConfigurations">
@@ -133,6 +132,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <EnableInf2cat>false</EnableInf2cat>
+    <IncludePath>$(Musa_Veil_Include);$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -158,11 +158,14 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <TreatWarningAsError>false</TreatWarningAsError>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdclatest</LanguageStandard_C>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
       <EntryPointSymbol>FxDriverEntry</EntryPointSymbol>
+      <AdditionalDependencies>ucxxrt.lib;Netio.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -192,6 +195,12 @@
     <ClCompile Include="module\module.cpp" />
     <ClCompile Include="process\process.cpp" />
     <ClCompile Include="ssdt\ssdt.cpp" />
+    <ClCompile Include="symbols\query-pdb\berkeley.c" />
+    <ClCompile Include="symbols\query-pdb\khttp.cpp" />
+    <ClCompile Include="symbols\query-pdb\ksocket.c" />
+    <ClCompile Include="symbols\query-pdb\lib.cpp" />
+    <ClCompile Include="symbols\symbols.cpp" />
+    <ClCompile Include="sync\lock.cpp" />
     <ClCompile Include="thread\thread.cpp" />
     <ClCompile Include="utils\utils.cpp" />
   </ItemGroup>
@@ -209,7 +218,19 @@
     <ClInclude Include="module\module.h" />
     <ClInclude Include="process\process.h" />
     <ClInclude Include="ssdt\ssdt.h" />
-    <ClInclude Include="symbols\symbols.hpp" />
+    <ClInclude Include="struct.h" />
+    <ClInclude Include="symbols\query-pdb\berkeley.h" />
+    <ClInclude Include="symbols\query-pdb\httprequestparser.h" />
+    <ClInclude Include="symbols\query-pdb\httpresponseparser.h" />
+    <ClInclude Include="symbols\query-pdb\json.hpp" />
+    <ClInclude Include="symbols\query-pdb\khttp.h" />
+    <ClInclude Include="symbols\query-pdb\kquery_pdb.h" />
+    <ClInclude Include="symbols\query-pdb\ksocket.h" />
+    <ClInclude Include="symbols\query-pdb\request.h" />
+    <ClInclude Include="symbols\query-pdb\response.h" />
+    <ClInclude Include="symbols\query-pdb\urlparser.h" />
+    <ClInclude Include="symbols\symbols.h" />
+    <ClInclude Include="sync\lock.h" />
     <ClInclude Include="thread\thread.h" />
     <ClInclude Include="utils\utils.h" />
   </ItemGroup>
@@ -224,7 +245,6 @@
     <Error Condition="!Exists('..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props'))" />
     <Error Condition="!Exists('..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.targets'))" />
     <Error Condition="!Exists('..\packages\Musa.Veil.1.2.5\build\native\Musa.Veil.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Musa.Veil.1.2.5\build\native\Musa.Veil.props'))" />
-    <Error Condition="!Exists('..\packages\Musa.Core.0.3.4\build\native\Musa.Core.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Musa.Core.0.3.4\build\native\Musa.Core.props'))" />
-    <Error Condition="!Exists('..\packages\Musa.Runtime.0.3.5\build\native\Musa.Runtime.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Musa.Runtime.0.3.5\build\native\Musa.Runtime.props'))" />
+    <Error Condition="!Exists('..\packages\ucxxrt.3.0.7\build\ucxxrt.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\ucxxrt.3.0.7\build\ucxxrt.props'))" />
   </Target>
 </Project>

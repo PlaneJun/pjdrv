@@ -78,44 +78,6 @@ drv::ERROR_CODE drv::init()
 			break;
 		}
 
-		communicate::Symbols symbs{};
-		symbs.eprocess.VadRoot = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"VadRoot");
-		symbs.eprocess.DirectoryTableBase = EzPdbGetStructPropertyOffset(&pdb, "_KPROCESS", L"DirectoryTableBase");
-		symbs.eprocess.ThreadListHead = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"ThreadListHead");
-		symbs.eprocess.ActiveProcessLinks = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"ActiveProcessLinks");
-		symbs.eprocess.UniqueProcessId = EzPdbGetStructPropertyOffset(&pdb, "_EPROCESS", L"UniqueProcessId");
-		symbs.ethread.Cid = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"Cid");
-		symbs.ethread.ThreadListEntry = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"ThreadListEntry");
-		symbs.ethread.Win32StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"Win32StartAddress");
-		symbs.ethread.StartAddress = EzPdbGetStructPropertyOffset(&pdb, "_ETHREAD", L"StartAddress");
-		symbs.ethread.Process = EzPdbGetStructPropertyOffset(&pdb, "_KTHREAD", L"Process");
-		symbs.global.KeServiceDescriptorTable = EzPdbGetRva(&pdb, "KeServiceDescriptorTable");
-		symbs.global.PspNotifyEnableMask = EzPdbGetRva(&pdb, "PspNotifyEnableMask");
-		symbs.global.ExDestroyHandle = EzPdbGetRva(&pdb, "ExDestroyHandle");
-		symbs.global.ExMapHandleToPointer = EzPdbGetRva(&pdb, "ExMapHandleToPointer");
-		symbs.global.PspCidTable = EzPdbGetRva(&pdb, "PspCidTable");
-		
-		DBG_LOG("VadRoot = %x", symbs.eprocess.VadRoot);
-		DBG_LOG("DirectoryTableBase = %x", symbs.eprocess.DirectoryTableBase);
-		DBG_LOG("ThreadListHead = %x", symbs.eprocess.ThreadListHead);
-		DBG_LOG("Cid = %x", symbs.ethread.Cid);
-		DBG_LOG("ThreadListEntry = %x", symbs.ethread.ThreadListEntry);
-		DBG_LOG("Win32StartAddress = %x", symbs.ethread.Win32StartAddress);
-		DBG_LOG("StartAddress = %x", symbs.ethread.StartAddress);
-		DBG_LOG("Process = %x", symbs.ethread.Process);
-		DBG_LOG("KeServiceDescriptorTable = %p", symbs.global.KeServiceDescriptorTable);
-		DBG_LOG("PspNotifyEnableMask = %p", symbs.global.PspNotifyEnableMask);
-		DBG_LOG("ExMapHandleToPointer = %p", symbs.global.ExMapHandleToPointer);
-		DBG_LOG("ExDestroyHandle = %p", symbs.global.ExDestroyHandle);
-		DBG_LOG("PspCidTable = %p", symbs.global.PspCidTable);
-		if (symbs.eprocess.VadRoot <= 0 || symbs.eprocess.DirectoryTableBase <=0 || symbs.global.KeServiceDescriptorTable <= 0 || symbs.global.PspNotifyEnableMask <= 0)
-		{
-			status_code = ERROR_CODE::CODE_GET_SYMBOLS_FAILED;
-			break;
-		}
-		EzPdbUnload(&pdb);
-		send_control(communicate::ECMD::CMD_Symbol,0,&symbs);
-
 	} while (FALSE);
 
 	return status_code;
@@ -265,14 +227,14 @@ bool drv::query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output)
 	return NT_SUCCESS(status);
 }
 
-HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool hide, PHANDLE tid)
+HANDLE drv::create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool no_notify, PHANDLE tid)
 {
 	HANDLE retHandle = NULL;
 	communicate::Thread thread{};
 	thread.handler = &retHandle;
 	thread.entry= entry;
 	thread.params = params;
-	thread.hide = hide;
+	thread.hide = no_notify; // 该处不是真正的隐藏，只是创建时不会被线程回调捕获
 	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_CreateThread, ProcessId, &thread);
 	if(NT_SUCCESS(status))
 	{
@@ -301,6 +263,14 @@ NTSTATUS drv::hide_thread(DWORD ProcessId, HANDLE tid, bool hide)
 	thread.threadid = tid;
 	thread.hide = hide;
 	NTSTATUS status = send_control(communicate::ECMD::cmd_R3_HideThread, ProcessId, &thread);
+	return status;
+}
+
+NTSTATUS drv::hide_process(DWORD ProcessId, bool hide)
+{
+	communicate::Process process{};
+	process.hide = hide;
+	NTSTATUS status = send_control(communicate::ECMD::CMD_R3_HideProcess, ProcessId, &process);
 	return status;
 }
 

@@ -15,11 +15,15 @@ namespace utils
 
 	VOID enable_notify_routine();
 
-	NTSTATUS remove_handle_from_table(HANDLE handle);
+	NTSTATUS resume_handle_sync(HANDLE handle);
 
-	NTSTATUS unlink(PLIST_ENTRY entryList, PLIST_ENTRY node, ELIST_TYPE type);
+	NTSTATUS resume_all_handle_sync();
 
-	NTSTATUS link(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type);
+	NTSTATUS remove_handle_from_table_sync(HANDLE handle);
 
-	void resume_all_unlink();
+	NTSTATUS unlink_sync(PLIST_ENTRY entryList, PLIST_ENTRY node, ELIST_TYPE type);
+
+	NTSTATUS link_sync(PLIST_ENTRY entryList, HANDLE id, ELIST_TYPE type);
+
+	void resume_all_unlink_sync();
 }

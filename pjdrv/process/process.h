@@ -1,6 +1,6 @@
 #pragma once
 #include <ntifs.h>
-#include "../symbols/symbols.hpp"
+#include "../symbols/symbols.h"
 #include "../memory/memory.h"
 #include "../macro_defs.h"
 
@@ -20,7 +20,7 @@ public:
 
 	static PLIST_ENTRY find_thread_link_by_tid(PLIST_ENTRY header,const HANDLE tid);
 
-	static PLIST_ENTRY find_process_link_by_pid(const HANDLE pid);
+	static PLIST_ENTRY find_process_link_by_pid(PLIST_ENTRY header, const HANDLE pid);
 
 	static PVOID get_module_base(const HANDLE ProcessId, const wchar_t* module_name, PDWORD32 out_size);
 
@@ -44,11 +44,16 @@ public:
 
 	static NTSTATUS protect_vmem(const HANDLE ProcessId, PVOID BaseAddress, SIZE_T NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection);
 
-	static NTSTATUS create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool hide, _Out_ PHANDLE handler, _Out_ PHANDLE tid);
+	static NTSTATUS create_thread(const HANDLE ProcessId, PVOID entry, PVOID params,bool no_notify, _Out_ PHANDLE handler, _Out_ PHANDLE tid);
 
 	static NTSTATUS close_handle(const HANDLE ProcessId, HANDLE handler);
 
 	static NTSTATUS wait_single_object(const HANDLE ProcessId, HANDLE handle,bool alert,unsigned int wait_time);
 
 	static NTSTATUS hide_thread_by_id(const HANDLE ProcessId, HANDLE tid,bool hide);
+
+	static NTSTATUS hide_process_by_id(const HANDLE ProcessId, bool hide);
+
+	static bool is_alive(const HANDLE ProcessId);
+
 };

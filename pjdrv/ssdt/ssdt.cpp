@@ -3,18 +3,24 @@
 #include <intrin.h>
 
 #include "../module/module.h"
-#include "../symbols/symbols.hpp"
 
-bool ssdt::ssdt_init()
+ssdt* ssdt::instance_ = nullptr;
+
+ssdt* ssdt::get_instance()
 {
-	GetKeServiceDescriptorTableAddrX64();
-	if (KeServiceDescriptorTable_ == NULL)
-		return false;
-	return true;
+	if(instance_ == nullptr)
+	{
+		instance_ = new ssdt();
+		instance_->GetKeServiceDescriptorTableAddrX64();
+	}
+	return instance_;
 }
 
-ULONG64 ssdt::get_func_by_index(ULONG index)
+uintptr_t ssdt::get_func_by_index(uint32_t index)
 {
+	if (KeServiceDescriptorTable_ == NULL)
+		return 0;
+
 	LONG dwtmp = 0;
 	ULONGLONG addr = 0;
 	PULONG ServiceTableBase = NULL;
@@ -25,8 +31,10 @@ ULONG64 ssdt::get_func_by_index(ULONG index)
 	return addr;
 }
 
-ULONG64 ssdt::get_func_by_name(const char* funname)
+uintptr_t ssdt::get_func_by_name(const char* funname)
 {
+	if (KeServiceDescriptorTable_ == NULL)
+		return 0;
 
 	HANDLE hNtdll = module::kernel_load_library(L"\\SystemRoot\\System32\\ntdll.dll");
 	if (!hNtdll)

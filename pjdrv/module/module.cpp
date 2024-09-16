@@ -205,7 +205,10 @@ PVOID module::get_ntoskrnl_base(OUT PULONG pSize)
 				checkPtr < (PVOID)((PUCHAR)pMod[i].ImageBase + pMod[i].ImageSize))
 			{
 				krnlBase = pMod[i].ImageBase;
-				*pSize = pMod[i].ImageSize;
+				if(pSize)
+				{
+					*pSize = pMod[i].ImageSize;
+				}
 				break;
 			}
 		}

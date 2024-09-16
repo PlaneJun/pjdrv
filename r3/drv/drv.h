@@ -19,8 +19,6 @@ public:
 		CODE_CTRL_FAILED,
 		CODE_DOWNLOAD_PDB_FAILED,
 		CODE_LOAD_PDB_FAILED,
-		CODE_GET_SYMBOLS_FAILED,
-		CODE_SET_SYMBOLS_FAILED
 	};
 
 public:
@@ -54,11 +52,13 @@ public:
 
 	bool query_mem(DWORD ProcessId, PVOID64 Address, PVOID64 Output);
 
-	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool hide, PHANDLE tid);
+	HANDLE create_thread(DWORD ProcessId, PVOID entry, PVOID params,bool no_notify, PHANDLE tid);
 
 	NTSTATUS wait_single_object(DWORD ProcessId, HANDLE handle,bool alert,ULONG wait_time);
 
 	NTSTATUS hide_thread(DWORD ProcessId, HANDLE tid, bool hide);
+
+	NTSTATUS hide_process(DWORD ProcessId, bool hide);
 
 	bool mouse_event_ex(DWORD x, DWORD y, USHORT flag);
 
@@ -103,8 +103,7 @@ private:
 		{CODE_DEVICE_FAILED,"open device failed"},
 		{CODE_CTRL_FAILED,"ctrl failed"},
 		{CODE_DOWNLOAD_PDB_FAILED,"download pdb failed"},
-		{CODE_LOAD_PDB_FAILED,"load pdb failed"},
-		{CODE_GET_SYMBOLS_FAILED,"get symbols failed"},
+		{CODE_LOAD_PDB_FAILED,"load pdb failed"}
 	};
 
 	NTSTATUS send_control(communicate::ECMD cmd,uint32_t pid = NULL,void* buffer = nullptr);
