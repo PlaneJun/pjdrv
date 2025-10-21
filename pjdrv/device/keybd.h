@@ -15,7 +15,10 @@ private:
 	typedef VOID(*fnKeyboardClassServiceCallback)(PDEVICE_OBJECT DeviceObject, PKEYBOARD_INPUT_DATA InputDataStart, PKEYBOARD_INPUT_DATA InputDataEnd, PULONG InputDataConsumed);
 
 public:
-	static NTSTATUS init();
 
-	static void keybd_event_(ULONG keyCode, USHORT flags);
+	static Keybd* instance();
+
+	NTSTATUS init();
+
+	void keybd_event_(ULONG keyCode, USHORT flags);
 };

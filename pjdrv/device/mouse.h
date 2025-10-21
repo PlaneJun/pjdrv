@@ -19,7 +19,9 @@ private:
 	typedef VOID(*fnMouseClassServiceCallback)(PDEVICE_OBJECT DeviceObject, PMOUSE_INPUT_DATA InputDataStart, PMOUSE_INPUT_DATA InputDataEnd, PULONG InputDataConsumed);
 
 public:
-	static NTSTATUS init();
+	static Mouse* instance();
 
-	static void mouse_event_(ULONG x, ULONG y, USHORT flags);
+	NTSTATUS init();
+
+	void mouse_event_(ULONG x, ULONG y, USHORT flags);
 };

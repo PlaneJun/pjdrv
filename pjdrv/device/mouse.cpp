@@ -1,5 +1,11 @@
 #include "mouse.h"
 
+Mouse* Mouse::instance()
+{
+	static Mouse* instance = new Mouse();
+	return instance;
+}
+
 NTSTATUS Mouse::init()
 {
 	return init_device(L"\\Driver\\mouhid", L"\\Driver\\mouclass");
@@ -7,7 +13,7 @@ NTSTATUS Mouse::init()
 #define KeMRaiseIrql(a,b) *(b) = KfRaiseIrql(a)
 void Mouse::mouse_event_(ULONG x, ULONG y, USHORT flags)
 {
-	DbgPrintEx(77, 0, "lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
+	DbgPrintEx(77, 0, "mouse_lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
 	if (!lpfnClassServiceCallback_)
 		return;
 

@@ -58,7 +58,7 @@ typedef struct _EZPDB
 std::string EzPdbDownload(
 	IN std::string pePath,
 	IN OPTIONAL std::string pdbDownloadPath = "C:\\sym",
-	IN OPTIONAL std::string symbolServer ="http://msdl.blackint3.com:88/download/symbols/" ); 
+	IN OPTIONAL std::string symbolServer ="https://msdl.microsoft.com/download/symbols/" ); 
 
 //https://msdl.microsoft.com/download/symbols/
 //http://msdl.blackint3.com:88/download/symbols/

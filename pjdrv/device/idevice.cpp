@@ -1,10 +1,6 @@
 #include "idevice.h"
 #include <Veil.h>
 
-PVOID IDevice::lpfnClassServiceCallback_ =NULL;
-
-PDEVICE_OBJECT IDevice::dev_klass_ = NULL;
-
 NTSTATUS IDevice::init_device(const wchar_t* hid_name, const wchar_t* class_name)
 {
 	NTSTATUS status = STATUS_SUCCESS;

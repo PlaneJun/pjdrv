@@ -52,6 +52,7 @@ drv::ERROR_CODE drv::init()
 			}
 		}
 
+		DBG_LOG("open device ok!");
 		// 获取状态码
 		int ctrl_code = NULL;
 		send_control(communicate::CMD_CONTROL,0,&ctrl_code);
@@ -62,6 +63,7 @@ drv::ERROR_CODE drv::init()
 		}
 
 		//初始化PDB
+		DBG_LOG("init pdb...");
 		std::string kernel = std::string(std::getenv("systemroot")) + "\\System32\\ntoskrnl.exe";
 		std::string pdbPath = EzPdbDownload(kernel);
 		if (pdbPath.empty())
@@ -70,6 +72,7 @@ drv::ERROR_CODE drv::init()
 			break;
 		}
 
+		DBG_LOG("download pdb ok:%s", pdbPath.c_str());
 		// 初始化符号
 		EZPDB pdb;
 		if (!EzPdbLoad(pdbPath, &pdb))
@@ -287,6 +290,7 @@ bool drv::keybd_event_ex(DWORD KeyCode, USHORT flag)
 {
 	communicate::Device device{};
 	device.keycode = MapVirtualKey(KeyCode, MAPVK_VK_TO_VSC);
+	DBG_LOG("KEY:%d,SC:%d,flag:%d", KeyCode, device.keycode,flag);
 	device.flags = flag ;
 	switch (KeyCode)
 	{
@@ -311,6 +315,7 @@ bool drv::keybd_event_ex(DWORD KeyCode, USHORT flag)
 			device.flags |= RI_KEY_E0;
 			break;
 	}
+	DBG_LOG("flag:%d", flag);
 	NTSTATUS status = send_control(communicate::CMD_R3_KbdEvent, 0, &device);
 	return NT_SUCCESS(status);
 }

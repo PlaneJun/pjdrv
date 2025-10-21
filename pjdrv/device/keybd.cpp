@@ -1,5 +1,11 @@
 #include "keybd.h"
 
+Keybd* Keybd::instance()
+{
+	static Keybd* instance = new Keybd();
+	return instance;
+}
+
 NTSTATUS Keybd::init()
 {
 	//KdBreakPoint();
@@ -9,12 +15,14 @@ NTSTATUS Keybd::init()
 	{
 		status = init_device(L"\\Driver\\i8042prt", L"\\Driver\\kbdclass");
 	}
+
+	DbgPrintEx(77, 0, "kdb_lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
 	return status;
 }
 
 void Keybd::keybd_event_(ULONG keyCode, USHORT flags)
 {
-	DbgPrintEx(77, 0, "lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
+	DbgPrintEx(77, 0, "kdb_lpfnClassServiceCallback_ = %p\n", lpfnClassServiceCallback_);
 	if (!lpfnClassServiceCallback_)
 		return;
 

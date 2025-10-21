@@ -106,9 +106,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="module\module.h">
       <Filter>module</Filter>
     </ClInclude>
@@ -184,5 +181,8 @@
     <ClInclude Include="symbols\query-pdb\urlparser.h">
       <Filter>symbols\query-pdb</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

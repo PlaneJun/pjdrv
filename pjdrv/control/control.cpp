@@ -284,21 +284,22 @@ void IoDispatch(communicate::PParams pdata)
 			}
 			case communicate::ECMD::CMD_R3_KbdEvent:
 			{
-				status = Keybd::init();
+				status = Keybd::instance()->init();
 				if (NT_SUCCESS(status))
 				{
 					communicate::PDevice p_device = static_cast<decltype(p_device)>(pdata->buffer);
-					Keybd::keybd_event_(p_device->keycode, p_device->flags);
+					DBG_LOG("SC:%d,flag:%d", p_device->keycode, p_device->flags);
+					Keybd::instance()->keybd_event_(p_device->keycode, p_device->flags);
 				}
 				break;
 			}
 			case communicate::ECMD::CMD_R3_MouseEvent:
 			{
-				status = Mouse::init();
+				status = Mouse::instance()->init();
 				if (NT_SUCCESS(status))
 				{
 					communicate::PDevice p_device = static_cast<decltype(p_device)>(pdata->buffer);
-					Mouse::mouse_event_(p_device->mx, p_device->my, p_device->flags);
+					Mouse::instance()->mouse_event_(p_device->mx, p_device->my, p_device->flags);
 				}
 				break;
 			}

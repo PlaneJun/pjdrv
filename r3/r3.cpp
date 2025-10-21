@@ -157,10 +157,25 @@ void device_test()
 
     DBG_LOG("3s后键盘自动按下 WIN键");
     Sleep(3000);
-    g_drv.keybd_event_ex(VK_LWIN, RI_KEY_MAKE);
+    /*g_drv.keybd_event_ex(VK_LWIN, RI_KEY_MAKE);
     Sleep(100);
-    g_drv.keybd_event_ex(VK_LWIN, RI_KEY_BREAK);
+    g_drv.keybd_event_ex(VK_LWIN, RI_KEY_BREAK);*/
 
+    g_drv.keybd_event_ex(VK_LEFT, RI_KEY_MAKE);
+    Sleep(100);
+    g_drv.keybd_event_ex(VK_LEFT, RI_KEY_BREAK);
+
+    g_drv.keybd_event_ex(VK_DOWN, RI_KEY_MAKE);
+    Sleep(100);
+    g_drv.keybd_event_ex(VK_DOWN, RI_KEY_BREAK);
+
+     g_drv.keybd_event_ex(VK_UP, RI_KEY_MAKE);
+    Sleep(100);
+    g_drv.keybd_event_ex(VK_UP, RI_KEY_BREAK);
+
+     g_drv.keybd_event_ex(VK_RIGHT, RI_KEY_MAKE);
+    Sleep(100);
+    g_drv.keybd_event_ex(VK_RIGHT, RI_KEY_BREAK);
     wait_until_enter();
 }
 
@@ -220,12 +235,12 @@ int main2()
     }
     DBG_LOG("init ok");
 
-    DBG_LOG("input test pid:");
+   /* DBG_LOG("input test pid:");
     uint32_t pid = 0;
-    std::cin >> pid;
+    std::cin >> pid;*/
 
-	PVOID64 ntdllBase = g_drv.get_process_module(pid, L"ntdll.dll",nullptr, false);
-	DBG_LOG("ntdll base = %p", ntdllBase);
+	/*PVOID64 ntdllBase = g_drv.get_process_module(pid, L"ntdll.dll",nullptr, false);
+	DBG_LOG("ntdll base = %p", ntdllBase);*/
 
 	/*uint64_t lpNewMem = alloc_test(pid);
     if(lpNewMem)
@@ -234,11 +249,11 @@ int main2()
         query_test(pid, lpNewMem);
     }*/
 
-    thread_test();
+    //thread_test();
 
-    process_test(pid);
+    //process_test(pid);
 
-    //device_test();
+    device_test();
 
 
 //#pragma region 注入DLL
